@@ -42,6 +42,12 @@ elif [ "${1}" = "modules" ]; then
   ## mv -f /usr/lib/udev/rules.d/80-net-name-slot.rules /usr/lib/udev/rules.d/80-net-name-slot.rules.bak
   [ -e /proc/sys/kernel/hotplug ] && printf '\000\000\000\000' >/proc/sys/kernel/hotplug
   /usr/sbin/depmod -a
+  # early 阶段直接 insmod 列表模块、不做 modules.dep 依赖解析（SYNOLoadModules），
+  # 且 devlink / intel_auxiliary 无 modalias alias（udev 也不会自动加载）：
+  # i40e→intel_auxiliary、ixgbe→devlink 会在早期加载缺符号失败（err -2）。
+  # 这里在 udev trigger 与后续网络模块加载前显式预加载这两个依赖模块。
+  /usr/sbin/modprobe intel_auxiliary 2>/dev/null || true
+  /usr/sbin/modprobe devlink 2>/dev/null || true
   /usr/sbin/udevd -d || {
     echo "FAIL"
     exit 1
