@@ -48,6 +48,15 @@ elif [ "${1}" = "modules" ]; then
   # 这里在 udev trigger 与后续网络模块加载前显式预加载这两个依赖模块。
   /usr/sbin/modprobe intel_auxiliary 2>/dev/null || true
   /usr/sbin/modprobe devlink 2>/dev/null || true
+  # 同类问题：DSM rc（SYNOLoadModules）的 KERNEL_MODULES 列表含 cpufreq_ondemand /
+  # cpufreq_conservative，却不含提供者 cpufreq_governor，且按路径 insmod 不做依赖解析。
+  # apollolake / denverton / geminilake 的官方内核未导出 gov_queue_work / cpufreq_governor_dbs /
+  # dbs_check_cpu（其余平台内核内置），故这两个 .ko 会 unknown symbol 加载失败（DSM rc 在
+  # jrExit 之后、rcExit 之前执行）。内核未提供这些符号时预加载提供者，使 DSM rc 的 insmod
+  # 得以解析；内核已内置则跳过（否则重复导出符号同样会加载失败）。
+  if [ -r /proc/kallsyms ] && ! grep -qw cpufreq_governor_dbs /proc/kallsyms; then
+    /usr/sbin/modprobe cpufreq_governor 2>/dev/null || true
+  fi
   /usr/sbin/udevd -d || {
     echo "FAIL"
     exit 1
