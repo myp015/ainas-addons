@@ -17,7 +17,14 @@ if [ "${1}" = "early" ]; then
 elif [ "${1}" = "modules" ]; then
   echo "Installing addon eudev - ${1}"
 
-  if [ -f "/usr/lib/modules/update/i915.ko" ] && lspci -nd ::300 2>/dev/null | grep -Eq '8086:[0-9a-fA-F]{4}'; then
+  # 双 DRM 栈（i915 + amdgpu/radeon 共用同一套 drm/ttm/gpu-sched）：
+  # 原逻辑只认 i915，没有 Intel 核显（AMD 平台）或 base i915 支持当前 GPU 时
+  # 会 rm -rf update，把 amdgpu/radeon 一起删掉；且 base 与 update 的 drm 版本
+  # 不同，只保留其一才安全（混栈 ABI 断裂）。检测到 amd 模块即整栈平铺。
+  if [ -f "/usr/lib/modules/update/amdgpu.ko" ] || [ -f "/usr/lib/modules/update/radeon.ko" ]; then
+    echo "update stack contains amdgpu/radeon; keep full DRM stack"
+    mv -vf /usr/lib/modules/update/* /usr/lib/modules/ 2>/dev/null || true
+  elif [ -f "/usr/lib/modules/update/i915.ko" ] && lspci -nd ::300 2>/dev/null | grep -Eq '8086:[0-9a-fA-F]{4}'; then
     GPU="$(lspci -nd ::300 2>/dev/null | grep -Eo '8086:[0-9a-fA-F]{4}' | head -n1 | sed 's/://')"
     PCI="pci:v0000$(echo "${GPU:-}" | cut -c1-4)d0000$(echo "${GPU:-}" | cut -c5-8)"
     if modinfo -F alias "/usr/lib/modules/i915.ko" 2>/dev/null | grep -iq "${PCI}"; then
