@@ -17,12 +17,21 @@ elif [ "${1}" = "late" ]; then
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
   cp -vpf /usr/bin/disks.sh /tmpRoot/usr/bin/disks.sh
-  {
-    echo '# Author: "RROrg"'
-    echo ''
-    echo '# general disks dtb rules'
-    echo 'ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{DEVNAME}=="/dev/nvme*|/dev/sas*|/dev/usb*|/dev/sd*|/dev/sata*", PROGRAM=="/usr/bin/disks.sh --update %E{DEVNAME}"'
-  } >"/tmpRoot/usr/lib/udev/rules.d/04-system-disk-dtb.rules"
+  # 7.x 的 udev 规则目录是 /usr/lib/udev/rules.d，6.x 是 /lib/udev/rules.d；
+  # 存在哪个就写哪个（6.2 上若 eudev addon 被跳过，目录可能都不存在 —— 此时只用
+  # patches 阶段生成的 model.dtb，热插拔不更新）
+  RULE_WRITTEN=0
+  for D in "/tmpRoot/usr/lib/udev/rules.d" "/tmpRoot/lib/udev/rules.d"; do
+    [ -d "${D}" ] || continue
+    {
+      echo '# Author: "RROrg"'
+      echo ''
+      echo '# general disks dtb rules'
+      echo 'ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{DEVNAME}=="/dev/nvme*|/dev/sas*|/dev/usb*|/dev/sd*|/dev/sata*", PROGRAM=="/usr/bin/disks.sh --update %E{DEVNAME}"'
+    } >"${D}/04-system-disk-dtb.rules"
+    RULE_WRITTEN=1
+  done
+  [ "${RULE_WRITTEN}" -eq 1 ] || echo "disks addon: no udev rules.d directory, skip hotplug dtb rule"
 
   if [ "$(/bin/get_key_value "/etc.defaults/synoinfo.conf" "supportportmappingv2")" = "yes" ]; then
     cp -vpf /usr/bin/dtc /tmpRoot/usr/bin/dtc
@@ -50,5 +59,6 @@ elif [ "${1}" = "uninstall" ]; then
 
   rm -rf "/tmpRoot/usr/bin/disks.sh"
   rm -rf "/tmpRoot/usr/lib/udev/rules.d/04-system-disk-dtb.rules"
+  rm -rf "/tmpRoot/lib/udev/rules.d/04-system-disk-dtb.rules"
   rm -rf "/tmpRoot/usr/bin/dtc"
 fi
