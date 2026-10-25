@@ -8,17 +8,49 @@
 
 PLATFORM="$(/bin/get_key_value /etc.defaults/synoinfo.conf unique | cut -d"_" -f2)"
 
+_release="$(/bin/uname -r)"
+_kernel_major="${_release%%[-+]*}"
+_kernel_major="${_kernel_major%%.*}"
+case "${_kernel_major}" in
+  '' | *[!0-9]*)
+    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    exit 1
+    ;;
+esac
+
 if [ "${1}" = "early" ]; then
   echo "Installing addon misc - ${1}"
 
-  # [CREATE][failed] Raidtool initsys
-  SO_FILE="/usr/syno/bin/scemd"
-  [ ! -f "${SO_FILE}.bak" ] && cp -pf "${SO_FILE}" "${SO_FILE}.bak"
-  cp -pf "${SO_FILE}" "${SO_FILE}.tmp"
-  xxd -c "$(xxd -p "${SO_FILE}.tmp" 2>/dev/null | wc -c)" -p "${SO_FILE}.tmp" 2>/dev/null \
-    | sed "s/2d6520302e39/2d6520312e32/" \
-    | xxd -r -p >"${SO_FILE}" 2>/dev/null
-  rm -f "${SO_FILE}.tmp"
+  # DSM 6.x 的 ramdisk 是 busybox 1.16.1，缺 sed/awk/sort/find/readlink/mktemp/blkid/xxd 这些 applet，
+  # 而 addon 的 early/patches/modules/late 四个阶段都在这个 ramdisk 里执行 ⇒ 由本载荷补齐。
+  # 载荷全部取自 DSM 6.2 自身（GLIBC ≤ 2.17，ramdisk 是 2.20），并带上各自的运行库：
+  #   gawk/sqlite3(DSM 根) → libreadline.so.6 + libncursesw.so.5
+  #   gawk               → libmpfr.so.4 + libgmp.so.10
+  #   sort               → libcrypto.so.1.0.0
+  #   blkid              → libblkid.so.1
+  # 用 busybox tar 解包，不依赖尚未就位的工具。
+  if [ "${_kernel_major}" -lt 5 ]; then
+    [ -f /addons/misc-6.2.tgz ] || {
+      echo " ERROR: /addons/misc-6.2.tgz not found" >&2
+      exit 1
+    }
+    tar -zxf /addons/misc-6.2.tgz -C / || {
+      echo " ERROR: extract /addons/misc-6.2.tgz failed" >&2
+      exit 1
+    }
+  fi
+
+  # [CREATE][failed] Raidtool initsys（7.x 的 scemd 二进制补丁：-e 0.9 → -e 1.2）
+  # 6.x 不做：该问题只出现在 7.x 的 scemd，且这段流水线一旦缺工具（xxd/sed）会把 scemd 截成空文件。
+  if [ "${_kernel_major}" -ge 5 ]; then
+    SO_FILE="/usr/syno/bin/scemd"
+    [ ! -f "${SO_FILE}.bak" ] && cp -pf "${SO_FILE}" "${SO_FILE}.bak"
+    cp -pf "${SO_FILE}" "${SO_FILE}.tmp"
+    xxd -c "$(xxd -p "${SO_FILE}.tmp" 2>/dev/null | wc -c)" -p "${SO_FILE}.tmp" 2>/dev/null \
+      | sed "s/2d6520302e39/2d6520312e32/" \
+      | xxd -r -p >"${SO_FILE}" 2>/dev/null
+    rm -f "${SO_FILE}.tmp"
+  fi
 
   if echo "epyc7003ntb" | grep -wq "${PLATFORM}"; then
     # for epyc7003ntb console error "sh: invalid number 'Read error'"
@@ -89,15 +121,23 @@ elif [ "${1}" = "rcExit" ]; then
   sed -i 's/check_ntb_connection$/exit 0 # check_ntb_connection/' "/usr/syno/share/clusterInstall.sh" 2>/dev/null || true
 
   # error message
+  # DSM 6.x 的安装器文案在 /usr/syno/web/installer.js（7.x 才是 main.js），且 6.x 前缀是 _T(...)
+  if [ "${_kernel_major}" -lt 5 ]; then
+    _webjs="/usr/syno/web/installer.js"
+    _webpat='_T("welcome","desc_install")'
+  else
+    _webjs="/usr/syno/web/main.js"
+    _webpat='c("welcome","desc_install")'
+  fi
   while true; do
     if [ ! -b /dev/synoboot ] || [ ! -b /dev/synoboot1 ] || [ ! -b /dev/synoboot2 ] || [ ! -b /dev/synoboot3 ]; then
-      if [ ! -f /usr/syno/web/main.js.bak ]; then
-        cp -f /usr/syno/web/main.js /usr/syno/web/main.js.bak
-        sed -i 's/c("welcome","desc_install")/"Error: Boot disk mounting failed. Please change the USB port of the boot disk and refresh the page."/' /usr/syno/web/main.js 2>/dev/null
+      if [ -f "${_webjs}" ] && [ ! -f "${_webjs}.bak" ]; then
+        cp -f "${_webjs}" "${_webjs}.bak"
+        sed -i "s|${_webpat}|\"Error: Boot disk mounting failed. Please change the USB port of the boot disk and refresh the page.\"|" "${_webjs}" 2>/dev/null
       fi
     else
-      if [ -f /usr/syno/web/main.js.bak ]; then
-        mv -f /usr/syno/web/main.js.bak /usr/syno/web/main.js
+      if [ -f "${_webjs}.bak" ]; then
+        mv -f "${_webjs}.bak" "${_webjs}"
       fi
     fi
     sleep 1
@@ -108,9 +148,13 @@ elif [ "${1}" = "rcExit" ]; then
   # reboot
   sed -i 's/reboot$/reboot -f/' /usr/syno/web/webman/reboot.cgi 2>/dev/null || true
 
-  # recovery
-  if grep -wq "recovery" /proc/cmdline 2>/dev/null && [ -x /usr/syno/web/webman/recovery.cgi ]; then
-    /usr/syno/web/webman/recovery.cgi
+  # recovery（6.x 的脚本名是 recover.cgi，7.x 是 recovery.cgi）
+  if grep -wq "recovery" /proc/cmdline 2>/dev/null; then
+    for RC in /usr/syno/web/webman/recovery.cgi /usr/syno/web/webman/recover.cgi; do
+      [ -x "${RC}" ] || continue
+      "${RC}"
+      break
+    done
   fi
 
 elif [ "${1}" = "late" ]; then
@@ -134,7 +178,7 @@ elif [ "${1}" = "late" ]; then
   done
 
   # lspci
-  mkdir -vp /tmpRoot/usr/local/share
+  mkdir -p /tmpRoot/usr/local/share
   cp -vpf /usr/local/share/pci.ids.gz /tmpRoot/usr/local/share/pci.ids.gz
 
   # CPU performance scaling
@@ -183,9 +227,12 @@ elif [ "${1}" = "late" ]; then
     [ -f /tmpRoot/usr/lib/modules-load.d/70-syno-nvidia-gpu.conf ] && sed -i 's/^nvidia/# nvidia/g' /tmpRoot/usr/lib/modules-load.d/70-syno-nvidia-gpu.conf
   fi
 
-  # sdcard
-  [ ! -f /tmpRoot/usr/lib/udev/script/sdcard.sh.bak ] && cp -vpf /tmpRoot/usr/lib/udev/script/sdcard.sh /tmpRoot/usr/lib/udev/script/sdcard.sh.bak
-  printf '#!/bin/sh\nexit 0\n' >/tmpRoot/usr/lib/udev/script/sdcard.sh
+  # sdcard（DSM 6.2 的 udev 脚本在 /lib/udev/script/，7.x 在 /usr/lib/udev/script/，两处都写）
+  for SDCARD_SH in /tmpRoot/usr/lib/udev/script/sdcard.sh /tmpRoot/lib/udev/script/sdcard.sh; do
+    [ -f "${SDCARD_SH}" ] || continue
+    [ -f "${SDCARD_SH}.bak" ] || cp -vpf "${SDCARD_SH}" "${SDCARD_SH}.bak"
+    printf '#!/bin/sh\nexit 0\n' >"${SDCARD_SH}"
+  done
 
   # beep
   cp -vpf /usr/bin/beep /tmpRoot/usr/bin/beep
@@ -207,13 +254,29 @@ elif [ "${1}" = "late" ]; then
     BAUD="$(echo "${I}" | cut -d',' -f2 | cut -d'n' -f1)"
     echo "ttyS0 ttyS1 ttyS2" | grep -wq "${TTYN}" && continue
 
-    mkdir -vp /tmpRoot/usr/lib/systemd/system/getty.target.wants
-    if [ -n "${TTYN}" ] && [ -e "/dev/${TTYN}" ]; then
-      echo "Make getty\@${TTYN}.service"
-      cp -vpf /tmpRoot/usr/lib/systemd/system/serial-getty\@.service /tmpRoot/usr/lib/systemd/system/getty\@${TTYN}.service
-      sed -i "s|^ExecStart=.*|ExecStart=-/sbin/agetty %I ${BAUD:-115200} linux|" /tmpRoot/usr/lib/systemd/system/getty\@${TTYN}.service
-      mkdir -vp /tmpRoot/usr/lib/systemd/system/getty.target.wants
-      ln -vsf /usr/lib/systemd/system/getty\@${TTYN}.service /tmpRoot/usr/lib/systemd/system/getty.target.wants/getty\@${TTYN}.service
+    if [ "${_kernel_major}" -lt 5 ]; then
+      # DSM 6.x 没有 systemd，写 upstart 任务（6.x 的 job 目录是 /usr/share/init）
+      if [ -n "${TTYN}" ] && [ -e "/dev/${TTYN}" ]; then
+        echo "Make getty for ${TTYN} (upstart)"
+        mkdir -p /tmpRoot/usr/share/init
+        {
+          echo 'description "RR addon getty"'
+          echo 'start on runlevel 1'
+          echo 'task'
+          echo 'console none'
+          echo 'env PATH=/sbin:/bin:/usr/sbin:/usr/bin'
+          echo "exec /usr/sbin/getty -L ${TTYN} ${BAUD:-115200} linux"
+        } >"/tmpRoot/usr/share/init/rr-getty-${TTYN}.conf"
+      fi
+    else
+      mkdir -p /tmpRoot/usr/lib/systemd/system/getty.target.wants
+      if [ -n "${TTYN}" ] && [ -e "/dev/${TTYN}" ]; then
+        echo "Make getty\@${TTYN}.service"
+        cp -vpf /tmpRoot/usr/lib/systemd/system/serial-getty\@.service /tmpRoot/usr/lib/systemd/system/getty\@${TTYN}.service
+        sed -i "s|^ExecStart=.*|ExecStart=-/sbin/agetty %I ${BAUD:-115200} linux|" /tmpRoot/usr/lib/systemd/system/getty\@${TTYN}.service
+        mkdir -p /tmpRoot/usr/lib/systemd/system/getty.target.wants
+        ln -sf /usr/lib/systemd/system/getty\@${TTYN}.service /tmpRoot/usr/lib/systemd/system/getty.target.wants/getty\@${TTYN}.service
+      fi
     fi
   done
 
@@ -237,8 +300,8 @@ elif [ "${1}" = "late" ]; then
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  ln -vsf /usr/lib/systemd/system/rr-misc.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/rr-misc.service
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/rr-misc.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/rr-misc.service
 
   # rr-once
   cp -vpf /usr/bin/rr-once.sh /tmpRoot/usr/bin/rr-once.sh
@@ -260,7 +323,7 @@ elif [ "${1}" = "late" ]; then
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  ln -vsf /usr/lib/systemd/system/rr-once.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/rr-once.service
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/rr-once.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/rr-once.service
 
 fi

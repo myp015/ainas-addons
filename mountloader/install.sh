@@ -6,13 +6,35 @@
 # See /LICENSE for more information.
 #
 
+_release="$(/bin/uname -r)"
+_kernel_major="${_release%%[-+]*}"
+_kernel_major="${_kernel_major%%.*}"
+case "${_kernel_major}" in
+  '' | *[!0-9]*)
+    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    exit 1
+    ;;
+esac
+
+# 工具包里只有 bin/cpio 需要 glibc 2.26（6.x 是 2.20），其余（file/xz/lz4/zstd/bzip2 及库）全部 ≤ 2.17。
+# 6.2 包 = 7.1 包仅替换 bin/cpio 为 x64-6.2.4 交叉编译的版本（由 addons-update.yml 组装）。
+if [ "${_kernel_major}" -lt 5 ]; then
+  _mountloader_pkg="/addons/mountloader-6.2.tgz"
+else
+  _mountloader_pkg="/addons/mountloader-7.1.tgz"
+fi
+
 if [ "${1}" = "late" ]; then
   echo "Installing addon mountloader - ${1}"
   mkdir -p "/tmpRoot/usr/rr/addons/"
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
+  [ -f "${_mountloader_pkg}" ] || {
+    echo " ERROR: ${_mountloader_pkg} not found (needed for kernel ${_release})" >&2
+    exit 1
+  }
   mkdir -p /tmpRoot/usr/mountloader
-  tar -zxf /addons/mountloader-7.1.tgz -C /tmpRoot/usr/mountloader
+  tar -zxf "${_mountloader_pkg}" -C /tmpRoot/usr/mountloader
 
   cp -vpf /usr/bin/rr-update.sh /tmpRoot/usr/bin/rr-update.sh
   cp -vpf /usr/bin/rr-loaderdisk.sh /tmpRoot/usr/bin/rr-loaderdisk.sh
@@ -25,15 +47,15 @@ if [ "${1}" = "late" ]; then
   chmod u+s /tmpRoot/sbin/rrmdo
 
   [ ! -f /tmpRoot/sbin/fatlabel ] && cp -vpf /usr/sbin/fatlabel /tmpRoot/sbin/fatlabel
-  [ ! -f /tmpRoot/sbin/dosfslabel ] && ln -vsf fatlabel /tmpRoot/sbin/dosfslabel
+  [ ! -f /tmpRoot/sbin/dosfslabel ] && ln -sf fatlabel /tmpRoot/sbin/dosfslabel
   [ ! -f /tmpRoot/sbin/fsck.fat ] && cp -vpf /usr/sbin/fsck.fat /tmpRoot/sbin/fsck.fat
-  [ ! -f /tmpRoot/sbin/dosfsck ] && ln -vsf fsck.fat /tmpRoot/sbin/dosfsck
-  [ ! -f /tmpRoot/sbin/fsck.msdos ] && ln -vsf fsck.fat /tmpRoot/sbin/fsck.msdos
-  [ ! -f /tmpRoot/sbin/fsck.vfat ] && ln -vsf fsck.fat /tmpRoot/sbin/fsck.vfat
+  [ ! -f /tmpRoot/sbin/dosfsck ] && ln -sf fsck.fat /tmpRoot/sbin/dosfsck
+  [ ! -f /tmpRoot/sbin/fsck.msdos ] && ln -sf fsck.fat /tmpRoot/sbin/fsck.msdos
+  [ ! -f /tmpRoot/sbin/fsck.vfat ] && ln -sf fsck.fat /tmpRoot/sbin/fsck.vfat
   [ ! -f /tmpRoot/sbin/mkfs.fat ] && cp -vpf /usr/sbin/mkfs.fat /tmpRoot/sbin/mkfs.fat
-  [ ! -f /tmpRoot/sbin/mkdosfs ] && ln -vsf mkfs.fat /tmpRoot/sbin/mkdosfs
-  [ ! -f /tmpRoot/sbin/mkfs.msdos ] && ln -vsf mkfs.fat /tmpRoot/sbin/mkfs.msdos
-  [ ! -f /tmpRoot/sbin/mkfs.vfat ] && ln -vsf mkfs.fat /tmpRoot/sbin/mkfs.vfat
+  [ ! -f /tmpRoot/sbin/mkdosfs ] && ln -sf mkfs.fat /tmpRoot/sbin/mkdosfs
+  [ ! -f /tmpRoot/sbin/mkfs.msdos ] && ln -sf mkfs.fat /tmpRoot/sbin/mkfs.msdos
+  [ ! -f /tmpRoot/sbin/mkfs.vfat ] && ln -sf mkfs.fat /tmpRoot/sbin/mkfs.vfat
 
   rm -f /tmpRoot/usr/rr/.mountloader
 

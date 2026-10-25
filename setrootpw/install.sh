@@ -6,22 +6,54 @@
 # See /LICENSE for more information.
 #
 
+_release="$(/bin/uname -r)"
+_kernel_major="${_release%%[-+]*}"
+_kernel_major="${_kernel_major%%.*}"
+case "${_kernel_major}" in
+  '' | *[!0-9]*)
+    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    exit 1
+    ;;
+esac
+
 if [ "${1}" = "late" ]; then
-  echo "Installing addon setrootpw - ${1}"
+  echo "Installing addon setrootpw - ${1} (kernel ${_kernel_major})"
   mkdir -p "/tmpRoot/usr/rr/addons/"
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
-  mkdir -p /tmpRoot/usr/lib/openssh
-  cp -vpf /usr/lib/openssh/sftp-server /tmpRoot/usr/lib/openssh/sftp-server
+  if [ "${_kernel_major}" -lt 5 ]; then
+    # DSM 6.x：sshd 是 /usr/bin/sshd，sftp 用内置 internal-sftp（不需要 sftp-server 二进制）；
+    # /etc/ssh/sshd_config 由 /etc.defaults/ssh/sshd_config 在系统初始化时生成，
+    # 故两个位置都改（存在才改）。OpenSSH 7.4 默认 root 禁止密码登录，须显式打开。
+    for FILE in /tmpRoot/etc/ssh/sshd_config /tmpRoot/etc.defaults/ssh/sshd_config; do
+      [ -f "${FILE}" ] || continue
+      [ -f "${FILE}.bak" ] || cp -pf "${FILE}" "${FILE}.bak"
+      cp -pf "${FILE}.bak" "${FILE}"
+      sed -i 's|^.*PermitRootLogin .*$|PermitRootLogin yes|' "${FILE}"
+      grep -q '^PermitRootLogin' "${FILE}" || echo 'PermitRootLogin yes' >>"${FILE}"
+    done
+  else
+    mkdir -p /tmpRoot/usr/lib/openssh
+    cp -vpf /usr/lib/openssh/sftp-server /tmpRoot/usr/lib/openssh/sftp-server
 
-  FILE="/tmpRoot/etc/ssh/sshd_config"
-  [ ! -f "${FILE}.bak" ] && cp -pf "${FILE}" "${FILE}.bak"
+    FILE="/tmpRoot/etc/ssh/sshd_config"
+    [ ! -f "${FILE}.bak" ] && cp -pf "${FILE}" "${FILE}.bak"
 
-  cp -pf "${FILE}.bak" "${FILE}"
-  sed -i 's|^.*PermitRootLogin .*$|PermitRootLogin yes|' ${FILE}
-  # sed -i 's|^.*PubkeyAuthentication .*$|PubkeyAuthentication yes|' ${FILE}
-  # sed -i 's|^.*PasswordAuthentication .*$|PasswordAuthentication yes|' ${FILE}
-  sed -i 's|^Subsystem.*$|Subsystem	sftp	/usr/lib/openssh/sftp-server|' ${FILE}
+    cp -pf "${FILE}.bak" "${FILE}"
+    sed -i 's|^.*PermitRootLogin .*$|PermitRootLogin yes|' ${FILE}
+    # sed -i 's|^.*PubkeyAuthentication .*$|PubkeyAuthentication yes|' ${FILE}
+    # sed -i 's|^.*PasswordAuthentication .*$|PasswordAuthentication yes|' ${FILE}
+    sed -i 's|^Subsystem.*$|Subsystem	sftp	/usr/lib/openssh/sftp-server|' ${FILE}
+  fi
+
+  # 6.x 没有 systemd：用 synoservice 重启 sshd，且 synouser/synogroup 在 /usr/syno/sbin。
+  if [ "${_kernel_major}" -lt 5 ]; then
+    _syno_sbin="/usr/syno/sbin/"
+    _sshd_restart="/usr/syno/sbin/synoservice --restart ssh"
+  else
+    _syno_sbin=""
+    _sshd_restart="systemctl restart sshd"
+  fi
 
   export LD_LIBRARY_PATH=/tmpRoot/bin:/tmpRoot/lib
   ESYNOSCHEDULER_DB="/tmpRoot/usr/syno/etc/esynoscheduler/esynoscheduler.db"
@@ -38,7 +70,7 @@ if [ "${1}" = "late" ]; then
 DELETE FROM task WHERE task_name LIKE 'SetRootPw';
 INSERT INTO task VALUES('SetRootPw', '', 'bootup', '', 0, 0, 0, 0, '', 0, '
 PW=""    # Please change to the password you need.
-[ -n "\${PW}" ] && /usr/syno/sbin/synouser --setpw root \${PW} && synogroup --memberadd administrators root && systemctl restart sshd
+[ -n "\${PW}" ] && ${_syno_sbin}synouser --setpw root \${PW} && ${_syno_sbin}synogroup --memberadd administrators root && ${_sshd_restart}
 synowebapi -s --exec api=SYNO.Core.Terminal method=set version=3 enable_ssh=true ssh_port=22
 ', 'script', '{}', '', '', '{}', '{}');
 EOF
@@ -46,10 +78,16 @@ EOF
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon setrootpw - ${1}"
 
-  rm -f /tmpRoot/usr/lib/openssh/sftp-server
+  if [ "${_kernel_major}" -lt 5 ]; then
+    for FILE in /tmpRoot/etc/ssh/sshd_config /tmpRoot/etc.defaults/ssh/sshd_config; do
+      [ -f "${FILE}.bak" ] && mv -f "${FILE}.bak" "${FILE}"
+    done
+  else
+    rm -f /tmpRoot/usr/lib/openssh/sftp-server
 
-  FILE="/tmpRoot/etc/ssh/sshd_config"
-  [ -f "${FILE}.bak" ] && mv -f "${FILE}.bak" "${FILE}"
+    FILE="/tmpRoot/etc/ssh/sshd_config"
+    [ -f "${FILE}.bak" ] && mv -f "${FILE}.bak" "${FILE}"
+  fi
 
   export LD_LIBRARY_PATH=/tmpRoot/bin:/tmpRoot/lib
   ESYNOSCHEDULER_DB="/tmpRoot/usr/syno/etc/esynoscheduler/esynoscheduler.db"

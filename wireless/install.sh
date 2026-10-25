@@ -8,6 +8,26 @@
 
 # shellcheck disable=SC2010
 
+_release="$(/bin/uname -r)"
+_kernel_major="${_release%%[-+]*}"
+_kernel_major="${_kernel_major%%.*}"
+case "${_kernel_major}" in
+  '' | *[!0-9]*)
+    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    exit 1
+    ;;
+esac
+
+# DSM 6.x 的 ramdisk 没有 iw/wpa_supplicant，且 7.1 载荷的 iw 依赖 libnl-3、
+# wpa_supplicant 依赖 libcrypto.so.3 / libdbus-1（均需 glibc 2.25+），6.x 的 glibc 是 2.20。
+# 6.2 载荷取自 DSM 6.2 自身（iw / wpa_supplicant / wpa_cli + libnl.so.2 / libssl.so.1.0.0），
+# 其中 libcrypto.so.1.0.0 由 misc addon 的 6.2 覆盖层提供（ramdisk）或 DSM 6.2 自带（root）。
+if [ "${_kernel_major}" -lt 5 ]; then
+  _wireless_pkg="/addons/wireless-6.2.tgz"
+else
+  _wireless_pkg="/addons/wireless-7.1.tgz"
+fi
+
 if [ "${1}" = "rcExit" ]; then
   echo "Installing addon wireless - ${1}"
 
@@ -18,7 +38,11 @@ if [ "${1}" = "rcExit" ]; then
     ETHX=$(ls /sys/class/net/ 2>/dev/null | grep '^eth8' | grep -v '^eth8$')
     if [ -n "${ETHX}" ]; then
       echo "Wireless: ${SSID} ${PSK} for ${ETHX}"
-      tar -zxf /addons/wireless-7.1.tgz -C /
+      [ -f "${_wireless_pkg}" ] || {
+        echo " ERROR: ${_wireless_pkg} not found (needed for kernel ${_release})" >&2
+        exit 1
+      }
+      tar -zxf "${_wireless_pkg}" -C /
       for N in ${ETHX}; do
         if [ -f "/var/run/wpa_supplicant.pid.${N}" ]; then
           kill "$(cat "/var/run/wpa_supplicant.pid.${N}")"
@@ -50,7 +74,13 @@ elif [ "${1}" = "late" ]; then
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
   cp -vpf /usr/bin/wireless_supplicant.sh /tmpRoot/usr/bin/wireless_supplicant.sh
-  tar -zxf /addons/wireless-7.1.tgz -C /tmpRoot/usr ./sbin/iw ./sbin/rfkill
+  if [ "${_kernel_major}" -lt 5 ]; then
+    # DSM 6.x 自带 /usr/sbin/{iw,wpa_supplicant,wpa_cli}（/sbin -> usr/sbin），运行期直接用系统自带；
+    # 载荷只用于安装阶段（rcExit 时还没有 DSM 根文件系统）。
+    echo "DSM 6.x uses its built-in iw/wpa_supplicant, skip payload extraction"
+  else
+    tar -zxf "${_wireless_pkg}" -C /tmpRoot/usr ./sbin/iw ./sbin/rfkill
+  fi
 
   SSID="$(cat /proc/cmdline 2>/dev/null | grep -Eo 'wpa.ssid=[^ ]+' | sed 's/wpa.ssid=//' | xxd -r -p)"
   PSK="$(cat /proc/cmdline 2>/dev/null | grep -Eo 'wpa.psk=[^ ]+' | sed 's/wpa.psk=//' | xxd -r -p)"

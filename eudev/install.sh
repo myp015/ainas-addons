@@ -37,9 +37,9 @@ if [ "${1}" = "early" ]; then
   # 6.2 上不建 modprobe/modinfo 软链：ramdisk 里 /usr/sbin/modprobe 由 redpill addon 的
   # iosched-trampoline 接管，覆盖它会破坏 rp.ko 的按需加载（RR 24.4.0 同样不建）。
   if [ "${_kernel_major}" -ge 5 ]; then
-    [ -L "/usr/sbin/modprobe" ] || ln -vsf /usr/bin/kmod /usr/sbin/modprobe
-    [ -L "/usr/sbin/modinfo" ] || ln -vsf /usr/bin/kmod /usr/sbin/modinfo
-    [ -L "/usr/sbin/depmod" ] || ln -vsf /usr/bin/kmod /usr/sbin/depmod
+    [ -L "/usr/sbin/modprobe" ] || ln -sf /usr/bin/kmod /usr/sbin/modprobe
+    [ -L "/usr/sbin/modinfo" ] || ln -sf /usr/bin/kmod /usr/sbin/modinfo
+    [ -L "/usr/sbin/depmod" ] || ln -sf /usr/bin/kmod /usr/sbin/depmod
   fi
   exit 0
 
@@ -139,9 +139,9 @@ elif [ "${1}" = "modules" ]; then
 elif [ "${1}" = "late" ]; then
   echo "Installing addon eudev - ${1} (${_eudev_ver})"
   if [ "${_kernel_major}" -ge 5 ]; then
-    # [ ! -L "/tmpRoot/usr/sbin/modprobe" ] && ln -vsf /usr/bin/kmod /tmpRoot/usr/sbin/modprobe
-    [ ! -L "/tmpRoot/usr/sbin/modinfo" ] && ln -vsf /usr/bin/kmod /tmpRoot/usr/sbin/modinfo
-    [ ! -L "/tmpRoot/usr/sbin/depmod" ] && ln -vsf /usr/bin/kmod /tmpRoot/usr/sbin/depmod
+    # [ ! -L "/tmpRoot/usr/sbin/modprobe" ] && ln -sf /usr/bin/kmod /tmpRoot/usr/sbin/modprobe
+    [ ! -L "/tmpRoot/usr/sbin/modinfo" ] && ln -sf /usr/bin/kmod /tmpRoot/usr/sbin/modinfo
+    [ ! -L "/tmpRoot/usr/sbin/depmod" ] && ln -sf /usr/bin/kmod /tmpRoot/usr/sbin/depmod
 
     [ ! -f "/tmpRoot/usr/bin/eject" ] && cp -vpf /usr/bin/eject /tmpRoot/usr/bin/eject
   fi
@@ -190,38 +190,26 @@ elif [ "${1}" = "late" ]; then
   mkdir -p /tmpRoot/usr/lib/udev
   /tmpRoot/bin/cp -vrf /usr/lib/udev/* /tmpRoot/usr/lib/udev/
 
-  # 重载规则：7.x 用 systemd oneshot unit，6.x 没有 systemd，用 upstart 的 /etc/init/*.conf
-  # （与 RR 24.4.0 的 eudev addon 一致；6.2 的 /sbin/init 是 upstart）。
-  if [ "${_kernel_major}" -lt 5 ]; then
-    mkdir -p /tmpRoot/etc/init
-    DEST=/tmpRoot/etc/init/eudev.conf
-    echo 'description "EUDEV daemon"'                   >"${DEST}"
-    echo 'start on runlevel 1'                          >>"${DEST}"
-    echo 'stop on runlevel [06]'                        >>"${DEST}"
-    echo 'expect fork'                                  >>"${DEST}"
-    echo 'respawn'                                      >>"${DEST}"
-    echo 'respawn limit 5 10'                           >>"${DEST}"
-    echo 'console log'                                  >>"${DEST}"
-    echo 'exec /usr/bin/udevadm hwdb --update'          >>"${DEST}"
-    echo 'exec /usr/bin/udevadm control --reload-rules' >>"${DEST}"
-  else
-    mkdir -p "/tmpRoot/usr/lib/systemd/system"
-    DEST="/tmpRoot/usr/lib/systemd/system/udevrules.service"
-    {
-      echo "[Unit]"
-      echo "Description=RR addon udev daemon"
-      echo
-      echo "[Service]"
-      echo "Type=oneshot"
-      echo "RemainAfterExit=yes"
-      echo "ExecStart=/usr/bin/udevadm hwdb --update"
-      echo "ExecStart=/usr/bin/udevadm control --reload-rules"
-      echo
-      echo "[Install]"
-      echo "WantedBy=multi-user.target"
-    } >"${DEST}"
+  # 重载规则：写 systemd oneshot unit。6.x 没有 systemd，但 loader 的 dsm6-services.sh
+  # 会在 DSM 6.x 启动时枚举 multi-user.target.wants 并执行各 unit 的 ExecStart，
+  # 所以 6.x/7.x 用同一份 unit 即可（RR 24.4.0 写 /etc/init/eudev.conf，而 DSM 6.2 的
+  # upstart 只读 /usr/share/init，该文件在 6.2 上永远不会被执行）。
+  mkdir -p "/tmpRoot/usr/lib/systemd/system"
+  DEST="/tmpRoot/usr/lib/systemd/system/udevrules.service"
+  {
+    echo "[Unit]"
+    echo "Description=RR addon udev daemon"
+    echo
+    echo "[Service]"
+    echo "Type=oneshot"
+    echo "RemainAfterExit=yes"
+    echo "ExecStart=/usr/bin/udevadm hwdb --update"
+    echo "ExecStart=/usr/bin/udevadm control --reload-rules"
+    echo
+    echo "[Install]"
+    echo "WantedBy=multi-user.target"
+  } >"${DEST}"
 
-    mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-    ln -vsf /usr/lib/systemd/system/udevrules.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/udevrules.service
-  fi
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/udevrules.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/udevrules.service
 fi

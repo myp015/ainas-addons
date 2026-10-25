@@ -6,13 +6,29 @@
 # See /LICENSE for more information.
 #
 
+_release="$(/bin/uname -r)"
+_kernel_major="${_release%%[-+]*}"
+_kernel_major="${_kernel_major%%.*}"
+case "${_kernel_major}" in
+  '' | *[!0-9]*)
+    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    exit 1
+    ;;
+esac
+
 if [ "${1}" = "late" ]; then
-  echo "Installing addon cpuinfo - ${1}"
+  echo "Installing addon cpuinfo - ${1} (kernel ${_kernel_major})"
   mkdir -p "/tmpRoot/usr/rr/addons/"
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
   # cpuinfo
-  cp -vpf /usr/bin/cpuinfo.sh /tmpRoot/usr/bin/cpuinfo.sh
+  # DSM 6.x 用同版本（DSM 6.2 时代）的脚本，只改 admin_center.js，不依赖 synoscgiproxy；
+  # 7.x 用现版。两者都装成 /usr/bin/cpuinfo.sh，unit 的 ExecStart 不变。
+  if [ "${_kernel_major}" -lt 5 ]; then
+    cp -vpf /usr/bin/cpuinfo-6.2.sh /tmpRoot/usr/bin/cpuinfo.sh
+  else
+    cp -vpf /usr/bin/cpuinfo.sh /tmpRoot/usr/bin/cpuinfo.sh
+  fi
 
   shift
   mkdir -p "/tmpRoot/usr/lib/systemd/system"
@@ -31,11 +47,13 @@ if [ "${1}" = "late" ]; then
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  ln -vsf /usr/lib/systemd/system/cpuinfo.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/cpuinfo.service
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/cpuinfo.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/cpuinfo.service
 
-  # synoscgiproxy
-  cp -vpf /usr/sbin/synoscgiproxy /tmpRoot/usr/sbin/synoscgiproxy
+  # synoscgiproxy（仅 7.x：6.x 不用它，且 6.x 的 ramdisk 里没有这个二进制）
+  if [ "${_kernel_major}" -ge 5 ]; then
+    cp -vpf /usr/sbin/synoscgiproxy /tmpRoot/usr/sbin/synoscgiproxy
+  fi
 
   # for FILE in "/tmpRoot/etc/nginx/nginx.conf" "/tmpRoot/usr/syno/share/nginx/nginx.mustache"; do
   #   [ ! -f "${FILE}.bak" ] && cp -pf "${FILE}" "${FILE}.bak"
@@ -59,8 +77,8 @@ if [ "${1}" = "late" ]; then
   #   echo "WantedBy=multi-user.target"
   # } >"${DEST}"
   #
-  # mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  # ln -vsf /usr/lib/systemd/system/synoscgiproxy.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/synoscgiproxy.service
+  # mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  # ln -sf /usr/lib/systemd/system/synoscgiproxy.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/synoscgiproxy.service
 
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon cpuinfo - ${1}"

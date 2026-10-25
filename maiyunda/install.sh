@@ -33,8 +33,8 @@ if [ "${1}" = "late" ]; then
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  ln -vsf /usr/lib/systemd/system/maiyunda.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/maiyunda.service
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/maiyunda.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/maiyunda.service
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon maiyunda - ${1}"
 

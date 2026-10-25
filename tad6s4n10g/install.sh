@@ -204,8 +204,8 @@ EOF
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  ln -vsf /usr/lib/systemd/system/tad6s4n10g.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/tad6s4n10g.service
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/tad6s4n10g.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/tad6s4n10g.service
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon tad6s4n10g - ${1}"
 

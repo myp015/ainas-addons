@@ -13,9 +13,9 @@ if [ "${1}" = "late" ]; then
 
   mkdir -p /tmpRoot/usr/vmtools
   tar -zxf /addons/vmtools-7.1.tgz -C /tmpRoot/usr/vmtools
-  ln -vsf /usr/vmtools/etc/open-vm-tools /tmpRoot/etc/open-vm-tools
-  ln -vsf /usr/vmtools/lib/open-vm-tools /tmpRoot/lib/open-vm-tools
-  ln -vsf /usr/vmtools/share/open-vm-tools /tmpRoot/share/open-vm-tools
+  ln -sf /usr/vmtools/etc/open-vm-tools /tmpRoot/etc/open-vm-tools
+  ln -sf /usr/vmtools/lib/open-vm-tools /tmpRoot/lib/open-vm-tools
+  ln -sf /usr/vmtools/share/open-vm-tools /tmpRoot/share/open-vm-tools
 
   VMTOOLS_PATH="/usr/vmtools"
   VMTOOLS_PID="/var/run/vmtools.pid"
@@ -116,8 +116,8 @@ if [ "${1}" = "late" ]; then
     } >"${DEST}"
     exit 1
   fi
-  mkdir -vp /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
-  ln -vsf /usr/lib/systemd/system/vmtools.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/vmtools.service
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
+  ln -sf /usr/lib/systemd/system/vmtools.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/vmtools.service
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon vmtools - ${1}"
 
