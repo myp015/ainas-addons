@@ -319,7 +319,12 @@ elif [ "${1}" = "late" ]; then
   cp -vpf /usr/bin/rr-misc.sh /tmpRoot/usr/bin/rr-misc.sh
   cp -vpf /usr/sbin/durex /tmpRoot/usr/sbin/durex
 
+  # DSM 6.x 没有 systemd，也就没有 /usr/lib/systemd/system 目录。但 6.x 的服务桥接
+  # （loader 侧 dsm6-services.sh）正是靠 multi-user.target.wants/ 里的 unit 取 ExecStart，
+  # 所以必须先 mkdir 再写 unit；否则重定向到不存在的目录直接失败，留下的只是一个
+  # 指向不存在文件的软链，桥接阶段 `[ -e ]` 直接跳过，服务永远不会执行。
   DEST="/tmpRoot/usr/lib/systemd/system/rr-misc.service"
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
   {
     echo "[Unit]"
     echo "Description=RR addon rr-misc daemon"
@@ -335,13 +340,13 @@ elif [ "${1}" = "late" ]; then
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
   ln -sf /usr/lib/systemd/system/rr-misc.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/rr-misc.service
 
   # rr-once
   cp -vpf /usr/bin/rr-once.sh /tmpRoot/usr/bin/rr-once.sh
 
   DEST="/tmpRoot/usr/lib/systemd/system/rr-once.service"
+  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
   {
     echo "[Unit]"
     echo "Description=RR addon rr-once daemon"
@@ -358,7 +363,6 @@ elif [ "${1}" = "late" ]; then
     echo "WantedBy=multi-user.target"
   } >"${DEST}"
 
-  mkdir -p /tmpRoot/usr/lib/systemd/system/multi-user.target.wants
   ln -sf /usr/lib/systemd/system/rr-once.service /tmpRoot/usr/lib/systemd/system/multi-user.target.wants/rr-once.service
 
 fi
