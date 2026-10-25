@@ -87,7 +87,35 @@ elif [ "${1}" = "modules" ]; then
   # mv -f /usr/lib/udev/rules.d/75-persistent-net-generator.rules /usr/lib/udev/rules.d/75-persistent-net-generator.rules.bak
   ## mv -f /usr/lib/udev/rules.d/80-net-name-slot.rules /usr/lib/udev/rules.d/80-net-name-slot.rules.bak
   [ -e /proc/sys/kernel/hotplug ] && printf '\000\000\000\000' >/proc/sys/kernel/hotplug
-  /usr/sbin/depmod -a
+  # depmod 失败时 udev 拿不到 modules.alias/dep，MODALIAS 自动加载会整体失效（不只是网卡）。
+  # DSM 6.2 broadwell（3.10.105）的模块集里 fb -> fb_defio,fbdev、fbdev -> efifb、
+  # efifb -> fb 三者成环，kmod depmod 打印 "Found 3 modules in dependency cycles!" 后
+  # 直接中止、一个索引文件都不写 ⇒ VMware 的 vmxnet3 不会被自动加载，表现为安装时
+  # 没有 eth0（ifconfig: SIOCSIFADDR: No such device），linuxrc.syno 只能进 junior 模式。
+  # ramdisk 阶段不需要 framebuffer 驱动，把环上的三个模块移出扫描路径后重试；
+  # 仍失败则 fail fast —— 静默失败会让 6.2 装不上去且现场没有任何提示。
+  # 7.x 保持原样：其模块布局在版本子目录下，且从无此环，不引入行为变化。
+  if [ "${MajorVersion}" -lt 7 ]; then
+    if ! /usr/sbin/depmod -a; then
+      _cycle_moved=0
+      for _cycle_m in fb fbdev efifb; do
+        [ -f "/usr/lib/modules/${_cycle_m}.ko" ] || continue
+        mkdir -p /usr/lib/modules-disabled
+        mv -f "/usr/lib/modules/${_cycle_m}.ko" "/usr/lib/modules-disabled/${_cycle_m}.ko" && _cycle_moved=1
+      done
+      echo "depmod failed (module dependency cycle); disabled fb/fbdev/efifb and retrying"
+      [ "${_cycle_moved}" -eq 1 ] || {
+        echo " ERROR: depmod failed and no known cycle module (fb/fbdev/efifb) found" >&2
+        exit 1
+      }
+      /usr/sbin/depmod -a || {
+        echo " ERROR: depmod still failed after disabling fb/fbdev/efifb" >&2
+        exit 1
+      }
+    fi
+  else
+    /usr/sbin/depmod -a
+  fi
   # 以下三处预加载是 7.x 的依赖补齐：6.x（4.4.59 / 3.10.105）里 cpufreq_governor_dbs 是内置的，
   # 且没有 devlink / intel_auxiliary 模块，6.x 上调用只会经 iosched-trampoline 报错噪音。
   if [ "${MajorVersion}" -ge 7 ]; then
