@@ -8,10 +8,16 @@
 
 PLATFORMS="apollolake geminilake epyc7002 epyc7003 epyc7003ntb geminilakenk icelaked r1000nk v1000nk"
 PLATFORM="$(/bin/get_key_value /etc.defaults/synoinfo.conf unique | cut -d"_" -f2)"
-if ! echo "${PLATFORMS}" | grep -qE "(^|[[:space:]])${PLATFORM}([[:space:]]|$)"; then
-  echo "${PLATFORM} is not supported console addon!"
-  exit 0
-fi
+# 白名单匹配用 shell 的 case 模式：不能把变量拼进 grep -E（含正则元字符的取值会被误判），
+# 也不能用 busybox 1.16.1 的 grep -w（该 applet 无此选项）。
+case " ${PLATFORMS} " in
+  *" ${PLATFORM} "*)
+    ;;
+  *)
+    echo "${PLATFORM} is not supported console addon!"
+    exit 0
+    ;;
+esac
 
 _release="$(/bin/uname -r)"
 # DSM 版本判据：读 /etc/defaults/VERSION 的 majorversion（6.2 → 6，7.x → 7）。

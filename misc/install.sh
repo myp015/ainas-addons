@@ -57,18 +57,22 @@ if [ "${1}" = "early" ]; then
     rm -f "${SO_FILE}.tmp"
   fi
 
-  if echo "epyc7003ntb" | grep -qE "(^|[[:space:]])${PLATFORM}([[:space:]]|$)"; then
-    # for epyc7003ntb console error "sh: invalid number 'Read error'"
-    sed -i 's/^main "\$@"$/# main "\$@"/' "/usr/syno/sbin/i2c_hb_checker.sh" 2>/dev/null || true
-    sed -i -E 's/169\.254\.4\.(1|2)/127.0.0.1/g; s/ --interface ntb_eth[0-9]{1,2}//g; s/check_ntb_connection$/exit 0 # check_ntb_connection/' /usr/syno/share/clusterInstall.sh || true
-  fi
+  # 用 case 模式而不是 grep -E 拼变量（变量含正则元字符会被误判；6.2 的 busybox grep 也没有 -w）
+  case " epyc7003ntb " in
+    *" ${PLATFORM} "*)
+      # for epyc7003ntb console error "sh: invalid number 'Read error'"
+      sed -i 's/^main "\$@"$/# main "\$@"/' "/usr/syno/sbin/i2c_hb_checker.sh" 2>/dev/null || true
+      sed -i -E 's/169\.254\.4\.(1|2)/127.0.0.1/g; s/ --interface ntb_eth[0-9]{1,2}//g; s/check_ntb_connection$/exit 0 # check_ntb_connection/' /usr/syno/share/clusterInstall.sh || true
+      ;;
+  esac
 
 elif [ "${1}" = "patches" ]; then
   # getty
   for I in $(cat /proc/cmdline 2>/dev/null | grep -Eo 'getty=[^ ]+' | sed 's/getty=//'); do
     TTYN="$(echo "${I}" | cut -d',' -f1)"
     BAUD="$(echo "${I}" | cut -d',' -f2 | cut -d'n' -f1)"
-    echo "ttyS0 ttyS1 ttyS2" | grep -qE "(^|[[:space:]])${TTYN}([[:space:]]|$)" && continue
+    # 用 case 模式而不是 grep -E 拼变量（变量含正则元字符会被误判；6.2 的 busybox grep 也没有 -w）
+    case " ttyS0 ttyS1 ttyS2 " in *" ${TTYN} "*) continue ;; esac
     if [ -n "${TTYN}" ] && [ -e "/dev/${TTYN}" ]; then
       echo "Starting getty on ${TTYN}"
       if [ -n "${BAUD}" ]; then
@@ -257,7 +261,8 @@ elif [ "${1}" = "late" ]; then
   for I in $(cat /proc/cmdline 2>/dev/null | grep -Eo 'getty=[^ ]+' | sed 's/getty=//'); do
     TTYN="$(echo "${I}" | cut -d',' -f1)"
     BAUD="$(echo "${I}" | cut -d',' -f2 | cut -d'n' -f1)"
-    echo "ttyS0 ttyS1 ttyS2" | grep -qE "(^|[[:space:]])${TTYN}([[:space:]]|$)" && continue
+    # 用 case 模式而不是 grep -E 拼变量（变量含正则元字符会被误判；6.2 的 busybox grep 也没有 -w）
+    case " ttyS0 ttyS1 ttyS2 " in *" ${TTYN} "*) continue ;; esac
 
     if [ "${MajorVersion}" -lt 7 ]; then
       # DSM 6.x 没有 systemd，写 upstart 任务（6.x 的 job 目录是 /usr/share/init）

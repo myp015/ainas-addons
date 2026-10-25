@@ -34,18 +34,23 @@ if [ "${1}" = "late" ]; then
 
   delblocklog() {
     [ -z "${1}" ] && return 1
-    if echo "all *" | grep -qE "(^|[[:space:]])${1}([[:space:]]|$)"; then
-      rm -f "${SYSLOG_NG_PATH}/RR.conf"
-      for D in not2kern not2msg; do
-        rm -f "${SYSLOG_NG_PATH}/include/${D}/RR_${D}.conf"
-      done
-    else
-      FNAME="f_$(echo "${1}" | sed 's/[^a-zA-Z0-9]/_/g' | sed 's/.*/\L&/' | cut -c 1-30)"
-      sed -i "/${FNAME}/d" "${SYSLOG_NG_PATH}/RR.conf" 2>/dev/null
-      for D in not2kern not2msg; do
-        sed -i "/${FNAME}/d" "${SYSLOG_NG_PATH}/include/${D}/RR_${D}.conf" 2>/dev/null
-      done
-    fi
+    # 用 case 模式匹配而不是 grep -E：参数可能是 "*"（清全部），把它拼进 ERE 会变成
+    # 非法量词（")*"），grep 直接报错并返回 2，本应清空的分支永远走不到。
+    case " all * " in
+      *" ${1} "*)
+        rm -f "${SYSLOG_NG_PATH}/RR.conf"
+        for D in not2kern not2msg; do
+          rm -f "${SYSLOG_NG_PATH}/include/${D}/RR_${D}.conf"
+        done
+        ;;
+      *)
+        FNAME="f_$(echo "${1}" | sed 's/[^a-zA-Z0-9]/_/g' | sed 's/.*/\L&/' | cut -c 1-30)"
+        sed -i "/${FNAME}/d" "${SYSLOG_NG_PATH}/RR.conf" 2>/dev/null
+        for D in not2kern not2msg; do
+          sed -i "/${FNAME}/d" "${SYSLOG_NG_PATH}/include/${D}/RR_${D}.conf" 2>/dev/null
+        done
+        ;;
+    esac
   }
 
   getblocklog() {

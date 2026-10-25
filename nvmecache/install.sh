@@ -9,10 +9,17 @@
 MODELS="DS918+ RS1619xs+ DS419+ DS1019+ DS719+ DS1621xs+"
 MODEL="$(cat /proc/sys/kernel/syno_hw_version)"
 
-if ! echo "${MODELS}" | grep -qE "(^|[[:space:]])${MODEL}([[:space:]]|$)"; then
-  echo "${MODEL} is not supported nvmecache addon!"
-  exit 0
-fi
+# 白名单匹配必须用 shell 自身的 case 模式，不能把变量拼进 grep -E：
+# 型号名带加号（DS918+ / DS1019+ …），在 ERE 里加号是重复量词，永远匹配不到字面加号，
+# 结果是本应支持的机型被判成 not supported。同理也不能用 busybox 1.16.1 的 grep -w（无此选项）。
+case " ${MODELS} " in
+  *" ${MODEL} "*)
+    ;;
+  *)
+    echo "${MODEL} is not supported nvmecache addon!"
+    exit 0
+    ;;
+esac
 
 if [ "${1}" = "patches" ]; then
   echo "Installing addon nvmecache - ${1}"

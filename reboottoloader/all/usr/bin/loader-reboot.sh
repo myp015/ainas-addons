@@ -18,7 +18,12 @@ use() {
   exit 1
 }
 
-if [ -z "${1}" ] || ! echo "${MODES}" | grep -qE "(^|[[:space:]])${1}([[:space:]]|$)"; then use; fi
+# 用 case 模式匹配，不把用户参数拼进 grep -E：参数里的 . * + 等正则会元字符会让判断失真，
+# 且 6.2 的 busybox grep 不支持 -w。空参数同样落入 * 分支 ⇒ use。
+case " ${MODES} " in
+  *" ${1} "*) ;;
+  *) use ;;
+esac
 
 echo "Rebooting to ${1} mode"
 

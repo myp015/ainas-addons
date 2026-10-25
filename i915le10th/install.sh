@@ -9,10 +9,16 @@
 PLATFORMS="apollolake geminilake"
 PLATFORM="$(/bin/get_key_value /etc.defaults/synoinfo.conf unique | cut -d"_" -f2)"
 
-if ! echo "${PLATFORMS}" | grep -qE "(^|[[:space:]])${PLATFORM}([[:space:]]|$)"; then
-  echo "${PLATFORM} is not supported i915le10th addon!"
-  exit 0
-fi
+# 白名单匹配用 shell 的 case 模式：不能把变量拼进 grep -E（含正则元字符的取值会被误判），
+# 也不能用 busybox 1.16.1 的 grep -w（该 applet 无此选项）。
+case " ${PLATFORMS} " in
+  *" ${PLATFORM} "*)
+    ;;
+  *)
+    echo "${PLATFORM} is not supported i915le10th addon!"
+    exit 0
+    ;;
+esac
 
 if [ "${1}" = "patches" ]; then
   echo "Installing addon i915le10th - ${1}"
