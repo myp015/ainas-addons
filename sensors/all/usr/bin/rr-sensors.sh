@@ -87,7 +87,7 @@ main() {
     sleep 1
     FanType="$(/bin/get_key_value /etc/synoinfo.conf fan_config_type_internal 2>/dev/null)"
     case "${FanType}" in fullfan | full) FanCurtMode="0" ;; coolfan | high) FanCurtMode="1" ;; quietfan | low) FanCurtMode="2" ;; *) FanCurtMode="-1" ;; esac
-    if echo "0 1 2" | grep -wq "${FanCurtMode}"; then
+    if echo "0 1 2" | grep -qE "(^|[[:space:]])${FanCurtMode}([[:space:]]|$)"; then
       if [ ! "${FanCurtMode}" = "${FanBaseMode}" ]; then
         _log "Fan speed mode changed from ${FanBaseMode} to ${FanCurtMode}"
         FanBaseMode="${FanCurtMode}"

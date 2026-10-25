@@ -84,7 +84,7 @@ function main() {
         ResetBtnPressed=${ResetBtnTimeout}
         btnBeep 3
       fi
-      if echo "3 9 18" | grep -wq "${ResetBtnTimeout}"; then
+      if echo "3 9 18" | grep -qE "(^|[[:space:]])${ResetBtnTimeout}([[:space:]]|$)"; then
         btnOpt Reset ${ResetBtnPressed}
       fi
     else

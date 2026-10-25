@@ -9,7 +9,7 @@
 PLATFORMS="apollolake geminilake"
 PLATFORM="$(/bin/get_key_value /etc.defaults/synoinfo.conf unique | cut -d"_" -f2)"
 
-if ! echo "${PLATFORMS}" | grep -wq "${PLATFORM}"; then
+if ! echo "${PLATFORMS}" | grep -qE "(^|[[:space:]])${PLATFORM}([[:space:]]|$)"; then
   echo "${PLATFORM} is not supported i915le10th addon!"
   exit 0
 fi

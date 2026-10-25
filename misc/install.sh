@@ -57,7 +57,7 @@ if [ "${1}" = "early" ]; then
     rm -f "${SO_FILE}.tmp"
   fi
 
-  if echo "epyc7003ntb" | grep -wq "${PLATFORM}"; then
+  if echo "epyc7003ntb" | grep -qE "(^|[[:space:]])${PLATFORM}([[:space:]]|$)"; then
     # for epyc7003ntb console error "sh: invalid number 'Read error'"
     sed -i 's/^main "\$@"$/# main "\$@"/' "/usr/syno/sbin/i2c_hb_checker.sh" 2>/dev/null || true
     sed -i -E 's/169\.254\.4\.(1|2)/127.0.0.1/g; s/ --interface ntb_eth[0-9]{1,2}//g; s/check_ntb_connection$/exit 0 # check_ntb_connection/' /usr/syno/share/clusterInstall.sh || true
@@ -68,7 +68,7 @@ elif [ "${1}" = "patches" ]; then
   for I in $(cat /proc/cmdline 2>/dev/null | grep -Eo 'getty=[^ ]+' | sed 's/getty=//'); do
     TTYN="$(echo "${I}" | cut -d',' -f1)"
     BAUD="$(echo "${I}" | cut -d',' -f2 | cut -d'n' -f1)"
-    echo "ttyS0 ttyS1 ttyS2" | grep -wq "${TTYN}" && continue
+    echo "ttyS0 ttyS1 ttyS2" | grep -qE "(^|[[:space:]])${TTYN}([[:space:]]|$)" && continue
     if [ -n "${TTYN}" ] && [ -e "/dev/${TTYN}" ]; then
       echo "Starting getty on ${TTYN}"
       if [ -n "${BAUD}" ]; then
@@ -154,7 +154,7 @@ elif [ "${1}" = "rcExit" ]; then
   sed -i 's/reboot$/reboot -f/' /usr/syno/web/webman/reboot.cgi 2>/dev/null || true
 
   # recovery（6.x 的脚本名是 recover.cgi，7.x 是 recovery.cgi）
-  if grep -wq "recovery" /proc/cmdline 2>/dev/null; then
+  if grep -qE "(^|[[:space:]])recovery([[:space:]]|$)" /proc/cmdline 2>/dev/null; then
     for RC in /usr/syno/web/webman/recovery.cgi /usr/syno/web/webman/recover.cgi; do
       [ -x "${RC}" ] || continue
       "${RC}"
@@ -206,7 +206,7 @@ elif [ "${1}" = "late" ]; then
   # crypto-kernel
   if [ -f /tmpRoot/usr/lib/modules-load.d/70-crypto-kernel.conf ]; then
     # crc32c-intel
-    if grep flags /proc/cpuinfo 2>/dev/null | grep -wq sse4_2; then
+    if grep flags /proc/cpuinfo 2>/dev/null | grep -qE "(^|[[:space:]])sse4_2([[:space:]]|$)"; then
       echo "CPU Supports SSE4.2, crc32c-intel should load"
     else
       echo "CPU does NOT support SSE4.2, crc32c-intel will not load, disabling"
@@ -214,7 +214,7 @@ elif [ "${1}" = "late" ]; then
     fi
 
     # aesni-intel
-    if grep flags /proc/cpuinfo 2>/dev/null | grep -wq aes; then
+    if grep flags /proc/cpuinfo 2>/dev/null | grep -qE "(^|[[:space:]])aes([[:space:]]|$)"; then
       echo "CPU Supports AES, aesni-intel should load"
     else
       echo "CPU does NOT support AES, aesni-intel will not load, disabling"
@@ -257,7 +257,7 @@ elif [ "${1}" = "late" ]; then
   for I in $(cat /proc/cmdline 2>/dev/null | grep -Eo 'getty=[^ ]+' | sed 's/getty=//'); do
     TTYN="$(echo "${I}" | cut -d',' -f1)"
     BAUD="$(echo "${I}" | cut -d',' -f2 | cut -d'n' -f1)"
-    echo "ttyS0 ttyS1 ttyS2" | grep -wq "${TTYN}" && continue
+    echo "ttyS0 ttyS1 ttyS2" | grep -qE "(^|[[:space:]])${TTYN}([[:space:]]|$)" && continue
 
     if [ "${MajorVersion}" -lt 7 ]; then
       # DSM 6.x 没有 systemd，写 upstart 任务（6.x 的 job 目录是 /usr/share/init）

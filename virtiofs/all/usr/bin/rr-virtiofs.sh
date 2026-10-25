@@ -28,7 +28,7 @@ else
     [ -e "${V}" ] || continue
     read -r TAG <"${V}"
     [ -z "${TAG}" ] && continue
-    mount | grep -qw "^${TAG}" && continue
+    mount | grep -q "^${TAG}[[:space:]]" && continue
 
     SHARE_NAME="virtio9p"
     SHARE_DESC="virtio9p share"
@@ -40,7 +40,7 @@ else
     if [ -d "${SHARE_PATH}" ]; then
       MOUNT_POINT="${SHARE_PATH}/${TAG}"
       mkdir -p "${MOUNT_POINT}"
-      if ! mount | grep -qw "on ${MOUNT_POINT} "; then
+      if ! mount | grep -qF "on ${MOUNT_POINT} "; then
         echo "Mounting ${TAG} to ${MOUNT_POINT}"
         mount -t 9p -o trans=virtio,version=9p2000.L "${TAG}" "${MOUNT_POINT}"
       fi
@@ -51,7 +51,7 @@ else
     [ -e "${V}" ] || continue
     read -r TAG <"${V}"
     [ -z "${TAG}" ] && continue
-    mount | grep -qw "^${TAG}" && continue
+    mount | grep -q "^${TAG}[[:space:]]" && continue
 
     SHARE_NAME="virtiofs"
     SHARE_DESC="virtiofs share"
@@ -63,7 +63,7 @@ else
     if [ -d "${SHARE_PATH}" ]; then
       MOUNT_POINT="${SHARE_PATH}/${TAG}"
       mkdir -p "${MOUNT_POINT}"
-      if ! mount | grep -qw "on ${MOUNT_POINT} "; then
+      if ! mount | grep -qF "on ${MOUNT_POINT} "; then
         echo "Mounting ${TAG} to ${MOUNT_POINT}"
         mount -t virtiofs -o sync,dirsync "${TAG}" "${MOUNT_POINT}"
       fi

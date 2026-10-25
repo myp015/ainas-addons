@@ -175,7 +175,7 @@ dtModel() {
     # SATA ports
     COUNT=0
 
-    HDDSORT="$(grep -wq "hddsort" /proc/cmdline 2>/dev/null && echo "true" || echo "false")"
+    HDDSORT="$(grep -qE "(^|[[:space:]])hddsort([[:space:]]|$)" /proc/cmdline 2>/dev/null && echo "true" || echo "false")"
 
     for F in $(LC_ALL=C printf '%s\n' /sys/block/sata* | sort -V); do
       [ ! -e "${F}" ] && continue
@@ -427,7 +427,7 @@ nondtModel() {
     printf "cal maxdisks=%d\n" "${MAXDISKS}"
   fi
 
-  if grep -wq "usbasinternal" /proc/cmdline 2>/dev/null; then
+  if grep -qE "(^|[[:space:]])usbasinternal([[:space:]]|$)" /proc/cmdline 2>/dev/null; then
     USBPORTCFG=0
     __set_conf_kv "usbportcfg" "$(printf '0x%.2x' ${USBPORTCFG})"
     printf 'set usbportcfg=0x%.2x\n' "${USBPORTCFG}"

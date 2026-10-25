@@ -42,7 +42,7 @@ function mountLoaderDisk() {
         }
       done
 
-      if echo "$@" | grep -wq "\-all"; then
+      if echo "$@" | grep -qE "(^|[[:space:]])\-all([[:space:]]|$)"; then
         INITRD_TOOLPATH="/usr/mountloader"
         RR_RAMDISK_FILE="/mnt/p3/initrd-rr"
         if [ -d "${INITRD_TOOLPATH}" ] && [ -f "${RR_RAMDISK_FILE}" ]; then
@@ -125,7 +125,7 @@ function unmountLoaderDisk() {
 
     sync
 
-    if echo "$@" | grep -wq "\-all"; then
+    if echo "$@" | grep -qE "(^|[[:space:]])\-all([[:space:]]|$)"; then
       ${RR_SUDO} rm -rf "${RR_PATH}"
     fi
     for j in {1..3}; do

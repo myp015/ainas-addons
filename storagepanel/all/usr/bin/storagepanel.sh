@@ -75,7 +75,15 @@ if [ "${1}" = "-r" ]; then
   exit
 fi
 
-[ -n "${1}" ] && HDD_BAY="$(echo "${HDD_BAY_LIST[@]}" | grep -iwo "${1}")" || HDD_BAY=""
+HDD_BAY=""
+if [ -n "${1}" ]; then
+  for _b in "${HDD_BAY_LIST[@]}"; do
+    if [ "${_b,,}" = "${1,,}" ]; then
+      HDD_BAY="${1}"
+      break
+    fi
+  done
+fi
 if [ -n "${1}" ] && [ -z "${HDD_BAY}" ]; then
   echo "parameter 1 error"
 fi

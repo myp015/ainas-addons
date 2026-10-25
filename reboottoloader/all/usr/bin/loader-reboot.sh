@@ -18,7 +18,7 @@ use() {
   exit 1
 }
 
-if [ -z "${1}" ] || ! echo "${MODES}" | grep -wq "${1}"; then use; fi
+if [ -z "${1}" ] || ! echo "${MODES}" | grep -qE "(^|[[:space:]])${1}([[:space:]]|$)"; then use; fi
 
 echo "Rebooting to ${1} mode"
 

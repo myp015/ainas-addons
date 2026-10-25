@@ -34,7 +34,7 @@ if [ "${1}" = "late" ]; then
 
   delblocklog() {
     [ -z "${1}" ] && return 1
-    if echo "all *" | grep -wq "${1}"; then
+    if echo "all *" | grep -qE "(^|[[:space:]])${1}([[:space:]]|$)"; then
       rm -f "${SYSLOG_NG_PATH}/RR.conf"
       for D in not2kern not2msg; do
         rm -f "${SYSLOG_NG_PATH}/include/${D}/RR_${D}.conf"

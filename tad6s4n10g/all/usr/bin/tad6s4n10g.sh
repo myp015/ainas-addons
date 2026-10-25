@@ -113,7 +113,7 @@ function btnMain() {
     NetBtnCurtVal="$(inb "0xA00" 3)"
     if [ ! "${NetBtnCurtVal}" = "${NetBtnBaseVal}" ]; then
       NetBtnTimeout=$((NetBtnTimeout + 1))
-      if echo "3 9" | grep -wq "${NetBtnTimeout}"; then
+      if echo "3 9" | grep -qE "(^|[[:space:]])${NetBtnTimeout}([[:space:]]|$)"; then
         NetBtnPressed=${NetBtnTimeout}
         btnLed 3
         btnBeep 3
@@ -129,7 +129,7 @@ function btnMain() {
     CopyBtnCurtVal="$(inb "0xA04" 6)"
     if [ ! "${CopyBtnCurtVal}" = "${CopyBtnBaseVal}" ]; then
       CopyBtnTimeout=$((CopyBtnTimeout + 1))
-      if echo "3 9" | grep -wq "${CopyBtnTimeout}"; then
+      if echo "3 9" | grep -qE "(^|[[:space:]])${CopyBtnTimeout}([[:space:]]|$)"; then
         CopyBtnPressed=${CopyBtnTimeout}
         btnLed 3
         btnBeep 3
@@ -145,7 +145,7 @@ function btnMain() {
     ResetBtnCurtVal="$(inb "0xA03" 6)"
     if [ ! "${ResetBtnCurtVal}" = "${ResetBtnBaseVal}" ]; then
       ResetBtnTimeout=$((ResetBtnTimeout + 1))
-      if echo "3 9 15" | grep -wq "${ResetBtnTimeout}"; then
+      if echo "3 9 15" | grep -qE "(^|[[:space:]])${ResetBtnTimeout}([[:space:]]|$)"; then
         ResetBtnPressed=${ResetBtnTimeout}
         btnLed 3
         btnBeep 3
@@ -165,7 +165,7 @@ function sdcMain() {
   CRPATH="/sys/devices/pci0000:00/0000:00:0d.0/usb2/2-1/2-1.4"
   while true; do
     UDISK="$(echo ${CRPATH}/*/*/*/*/block/usb* 2>/dev/null | head -1 | xargs -n1 basename)"
-    if cat /proc/partitions 2>/dev/null | grep -wq "${UDISK}"; then
+    if cat /proc/partitions 2>/dev/null | grep -qE "(^|[[:space:]])${UDISK}([[:space:]]|$)"; then
       sleep 1
       continue
     fi
