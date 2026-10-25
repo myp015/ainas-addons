@@ -43,6 +43,18 @@ if [ "${1}" = "early" ]; then
       echo " ERROR: extract /addons/misc-6.2.tgz failed" >&2
       exit 1
     }
+
+    # 本 addon 的 root/usr/bin 来自 rr-misc 的 7.1 spk（x64-7.1 工具链），其中 cp/grep/mv/rm
+    # 需要 GLIBC_2.26，而 6.2 ramdisk 只有 glibc 2.20。installAddon 会把 all.tgz 的 root/
+    # 无条件拷进 ramdisk 根，于是这四个命令（6.2 上原本是 busybox 的软链接）被整成跑不起来的
+    # 7.1 二进制 —— 而 DSM 安装器（scemd → installer.sh）全程依赖它们，任何一步 "GLIBC_2.26
+    # not found" 都会让安装流程在最后失败，网页上就变成 error_unknown（安装过程中出现错误…），
+    # 但系统其实已经写好了。busybox 自带这四个 applet，恢复成软链接即可。
+    for _a in cp grep mv rm; do
+      if [ -f "/usr/bin/${_a}" ] && [ ! -h "/usr/bin/${_a}" ]; then
+        ln -sf busybox "/usr/bin/${_a}"
+      fi
+    done
   fi
 
   # [CREATE][failed] Raidtool initsys（7.x 的 scemd 二进制补丁：-e 0.9 → -e 1.2）
@@ -149,6 +161,19 @@ elif [ "${1}" = "rcExit" ]; then
         mv -f "${_webjs}.bak" "${_webjs}"
       fi
     fi
+
+    # 安装失败原因诊断：DSM 安装器（scemd）只把结果写进 /tmp 下的这几个文件，而安装完成
+    # 后 scemd 直接重启，没有任何 addon 阶段还能读到它们（tmpfs 随即丢失）。网页上那个
+    # error_unknown 页面（"安装过程中出现错误…"）正是拿不到已知错误码时的兜底文案，
+    # 所以这几个文件是唯一能定案 98% 报错的东西。一出现就打进 kmsg，让 dmesg 带走。
+    # 每个文件只打一次，避免每秒刷屏。
+    for _diag in /tmp/installer.error /tmp/fhost.status /tmp/recover_fail; do
+      [ -f "${_diag}" ] || continue
+      [ -f "${_diag}.kmsgd" ] && continue
+      touch "${_diag}.kmsgd" 2>/dev/null || true
+      echo "AiNasDiag: ${_diag}=$(cat "${_diag}" 2>/dev/null) progress=$(cat /tmp/install.progress 2>/dev/null)" >/dev/kmsg 2>/dev/null || true
+    done
+
     sleep 1
   done &
   # disable DisabledPortDisks
