@@ -270,7 +270,12 @@ elif [ "${1}" = "late" ]; then
 
   # beep
   cp -vpf /usr/bin/beep /tmpRoot/usr/bin/beep
-  cp -vpdf /usr/lib/libubsan.so* /tmpRoot/usr/lib/
+  # libubsan 只在 7.x 的 ramdisk 里；6.2 的 ramdisk 没有该库（beep 本身只依赖 libc.so.6），
+  # 通配符不展开时 cp 会报 "can't stat '/usr/lib/libubsan.so*'" —— 逐项判存在再拷。
+  for _so in /usr/lib/libubsan.so*; do
+    [ -e "${_so}" ] || continue
+    cp -vpdf "${_so}" /tmpRoot/usr/lib/
+  done
   # [ ! -f /tmpRoot/usr/syno/bin/synoschedtool.bak ] && cp -vpf /tmpRoot/usr/syno/bin/synoschedtool /tmpRoot/usr/syno/bin/synoschedtool.bak
   # printf '#!/bin/sh\ncase "${1}" in\n  --beep)\n  beep -r ${2}\n  ;;\n  *)\n    /usr/syno/bin/synoschedtool.bak "$@"  ;;\nesac\n' >/tmpRoot/usr/syno/bin/synoschedtool
 

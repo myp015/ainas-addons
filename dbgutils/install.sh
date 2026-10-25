@@ -12,7 +12,9 @@ getlog() {
     exit 1
   fi
 
-  LOADER_DISK_PART1="$(/sbin/blkid -L RR1 2>/dev/null)"
+  # 6.2 的 ramdisk 里没有 /sbin/blkid（也没有 /usr/sbin/blkid），写死绝对路径只会静默失败；
+  # 走 PATH 才能在 misc 的 6.2 载荷（/usr/sbin/blkid）就位后被找到。找不到就退到 synoboot1。
+  LOADER_DISK_PART1="$(blkid -L RR1 2>/dev/null)"
   if [ ! -b "${LOADER_DISK_PART1}" ] && [ -b "/dev/synoboot1" ]; then
     LOADER_DISK_PART1="/dev/synoboot1"
   fi
@@ -37,13 +39,26 @@ getlog() {
     echo " ERROR: vfat is not loaded, cannot mount ${LOADER_DISK_PART1}" >&2
     exit 1
   fi
+  # 群晖内核自带"引导盘挂载保护"，这是 6.2/7.x 都挂不上 /dev/synoboot1 的**真正原因**（不是缺
+  # nls codepage —— 实测 fat/vfat 已注册、内核 nls 表也能加载）：
+  #   drivers 之外的 fs/namespace.c:3000  do_mount()
+  #     extern int gSynoInstallFlag;
+  #     if (0 == gSynoInstallFlag && gSynoHasDynModule &&
+  #         strstr(dev_name, CONFIG_SYNO_USB_FLASH_DEVICE_PATH))   // "/dev/synoboot"
+  #         return -EINVAL;
+  # 即：只要 dev_name 里含 "/dev/synoboot"，而 gSynoInstallFlag==0，do_mount 直接返回 EINVAL。
+  # busybox 的 mount 在不带 -t 时会逐个试 /proc/filesystems 里的类型，把 EINVAL 统一报成
+  # "No such device"(ENODEV)，于是日志里那条 ENODEV 极具误导性。
+  # 6.2 上除 nextkvmx64 外没有任何人会设这个 flag（见 ramdisk 的 linuxrc.syno / init.post），
+  # 所以必须由本 addon 自己开、用完复位。**这两行不能删**，删了 6.2/7.x 全部挂不上。
   echo 1 >/proc/sys/kernel/syno_install_flag 2>/dev/null
   [ -f "/sbin/fsck.vfat" ] && fsck.vfat -aw "${LOADER_DISK_PART1}" >/dev/null 2>&1 || true
 
   WORK_PATH="/mnt/p1"
   mkdir -p "${WORK_PATH}"
   mount | grep -q "${LOADER_DISK_PART1}" && umount "${LOADER_DISK_PART1}" 2>/dev/null || true
-  mount "${LOADER_DISK_PART1}" "${WORK_PATH}" || {
+  # 显式 -t vfat：不带 -t 时 busybox 会探测所有类型，任何失败都报成 ENODEV，掩盖真实原因。
+  mount -t vfat "${LOADER_DISK_PART1}" "${WORK_PATH}" || {
     echo "Can't mount ${LOADER_DISK_PART1}."
     exit 1
   }
@@ -61,14 +76,21 @@ getlog() {
 
   ls -l /sys/class/block >"${DEST_PATH}/disk-block.log" || true
   ls -l /sys/class/scsi_host >"${DEST_PATH}/disk-scsi_host.log" || true
-  cat /sys/block/*/device/syno_block_info >"${DEST_PATH}/disk-syno_block_info.log" || true
+  # 没有匹配设备时 /sys/block/*/device/syno_block_info 通配不展开，cat 会拿字面量去打开并报错；
+  # 用循环逐个判存在，避免日志里多出一条与实际无关的 "No such file or directory"。
+  for _SBI in /sys/block/*/device/syno_block_info; do
+    [ -e "${_SBI}" ] || continue
+    cat "${_SBI}"
+  done >"${DEST_PATH}/disk-syno_block_info.log" 2>/dev/null || true
 
-  [ -f "/addons/addons.sh" ] && cp -pf "/addons/addons.sh" "${DEST_PATH}/addons.sh" || true
-  [ -f "/addons/model.dts" ] && cp -pf "/addons/model.dts" "${DEST_PATH}/model.dts" || true
+  # 目标是 FAT（vfat），不支持保留属主/权限，cp -p 必然打印 "failed to preserve ownership"，
+  # 用 -f 即可。
+  [ -f "/addons/addons.sh" ] && cp -f "/addons/addons.sh" "${DEST_PATH}/addons.sh" || true
+  [ -f "/addons/model.dts" ] && cp -f "/addons/model.dts" "${DEST_PATH}/model.dts" || true
 
-  [ -f "/var/log/messages" ] && cp -pf "/var/log/messages" "${DEST_PATH}/messages" || true
-  [ -f "/var/log/linuxrc.syno.log" ] && cp -pf "/var/log/linuxrc.syno.log" "${DEST_PATH}/linuxrc.syno.log" || true
-  [ -f "/tmp/installer_sh.log" ] && cp -pf "/tmp/installer_sh.log" "${DEST_PATH}/installer_sh.log" || true
+  [ -f "/var/log/messages" ] && cp -f "/var/log/messages" "${DEST_PATH}/messages" || true
+  [ -f "/var/log/linuxrc.syno.log" ] && cp -f "/var/log/linuxrc.syno.log" "${DEST_PATH}/linuxrc.syno.log" || true
+  [ -f "/tmp/installer_sh.log" ] && cp -f "/tmp/installer_sh.log" "${DEST_PATH}/installer_sh.log" || true
 
   sync
   umount "${LOADER_DISK_PART1}" 2>/dev/null
