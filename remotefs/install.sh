@@ -6,23 +6,32 @@
 # See /LICENSE for more information.
 #
 
+# libsynosdk 的 soname 主版本跟随 DSM 大版本：6.2 是 libsynosdk.so.6，7.x 是 .so.7。
+# 写死 .so.7 会让 6.2 上必然打印 "libsynosdk.so.7 not found" 且补丁完全没打上。
+MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+case "${MajorVersion}" in
+  '' | *[!0-9]*)
+    echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
+    exit 1
+    ;;
+esac
+SO_FILE="/tmpRoot/usr/lib/libsynosdk.so.${MajorVersion}"
+
 if [ "${1}" = "late" ]; then
   echo "Installing addon remotefs - ${1}"
   mkdir -p "/tmpRoot/usr/rr/addons/"
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
-  SO_FILE="/tmpRoot/usr/lib/libsynosdk.so.7"
-  if [ -f "${SO_FILE}" ]; then
-    echo "Patching libsynosdk.so.7"
-    [ ! -f "${SO_FILE}.bak" ] && cp -pf "${SO_FILE}" "${SO_FILE}.bak"
-    # force to support remote fs
-    PatchELFSharp "${SO_FILE}" "SYNOFSIsRemoteFS" "B8 00 00 00 00 C3"
-  else
-    echo "libsynosdk.so.7 not found"
+  if [ ! -f "${SO_FILE}" ]; then
+    echo " ERROR: ${SO_FILE} not found, remote fs patch not applied" >&2
+    exit 1
   fi
+  echo "Patching $(basename "${SO_FILE}")"
+  [ ! -f "${SO_FILE}.bak" ] && cp -pf "${SO_FILE}" "${SO_FILE}.bak"
+  # force to support remote fs
+  PatchELFSharp "${SO_FILE}" "SYNOFSIsRemoteFS" "B8 00 00 00 00 C3"
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon remotefs - ${1}"
 
-  SO_FILE="/tmpRoot/usr/lib/libsynosdk.so.7"
   [ -f "${SO_FILE}.bak" ] && mv -f "${SO_FILE}.bak" "${SO_FILE}"
 fi

@@ -13,6 +13,10 @@ if [ "${1}" = "late" ]; then
 
   mkdir -p /tmpRoot/usr/vmtools
   tar -zxf /addons/vmtools-7.1.tgz -C /tmpRoot/usr/vmtools
+  # open-vm-tools 按 --prefix=/ 构建，数据目录就是 /share/open-vm-tools。
+  # DSM 7.x 的根里有 /share，DSM 6.2 没有（它只用 /volume1），缺父目录会让 ln 失败、
+  # tools 也找不到数据路径，所以先补建父目录再链接（7.x 上 mkdir -p 无副作用）。
+  mkdir -p /tmpRoot/share
   ln -sf /usr/vmtools/etc/open-vm-tools /tmpRoot/etc/open-vm-tools
   ln -sf /usr/vmtools/lib/open-vm-tools /tmpRoot/lib/open-vm-tools
   ln -sf /usr/vmtools/share/open-vm-tools /tmpRoot/share/open-vm-tools

@@ -21,7 +21,22 @@ getlog() {
     exit 1
   fi
 
+  # DSM 6.2 的 ramdisk 没有 modules.dep（eudev 的 depmod 要到 modules 阶段才跑），kmod 的
+  # modprobe 解析不了 fat -> vfat 依赖、静默失败；更早的时候 /usr/sbin/modprobe 还可能是
+  # redpill 的 iosched-trampoline（只认 elevator-iosched，其余参数直接丢）。vfat 因此没被
+  # 注册，busybox 的 mount 把 "文件系统类型未注册" 报成 ENODEV：
+  #   mount: mounting /dev/synoboot1 on /mnt/p1 failed: No such device
+  # ramdisk 自带未压缩 .ko（6.2 的模块布局）时按依赖顺序直接 insmod，绕开 modprobe。
+  if ! grep -q vfat /proc/filesystems 2>/dev/null && [ -f "/usr/lib/modules/vfat.ko" ]; then
+    insmod "/usr/lib/modules/fat.ko" 2>/dev/null || true
+    insmod "/usr/lib/modules/vfat.ko" 2>/dev/null || true
+  fi
   modprobe -q vfat
+  # 挂不上 loader 分区就没法留日志，继续跑只会得到一条误导性的 ENODEV，直接失败退出。
+  if ! grep -q vfat /proc/filesystems 2>/dev/null; then
+    echo " ERROR: vfat is not loaded, cannot mount ${LOADER_DISK_PART1}" >&2
+    exit 1
+  fi
   echo 1 >/proc/sys/kernel/syno_install_flag 2>/dev/null
   [ -f "/sbin/fsck.vfat" ] && fsck.vfat -aw "${LOADER_DISK_PART1}" >/dev/null 2>&1 || true
 
