@@ -7,18 +7,20 @@
 #
 
 _release="$(/bin/uname -r)"
-_kernel_major="${_release%%[-+]*}"
-_kernel_major="${_kernel_major%%.*}"
-case "${_kernel_major}" in
+# DSM 版本判据：读 /etc/defaults/VERSION 的 majorversion（6.2 → 6，7.x → 7）。
+# 不能用内核主版本 —— DSM 7.0~7.3 的内核同样是 4.4.x（4.4.180 / 4.4.302），与 6.2 的
+# 4.4.59 / 3.10.105 主版本相同，用内核主版本会把整个 7.x 误判成 6.2。
+MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+case "${MajorVersion}" in
   '' | *[!0-9]*)
-    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
     exit 1
     ;;
 esac
 
 # 7.1 载荷的 powersched 需要 GLIBCXX_3.4.21（gcc 5+），DSM 6.x 的 libstdc++ 只到 6.0.20（3.4.20），
 # 故 6.x 用 x64-6.2.4 交叉编译的版本（由 addons-update.yml 产出）。
-if [ "${_kernel_major}" -lt 5 ]; then
+if [ "${MajorVersion}" -lt 7 ]; then
   _powersched_bin="/usr/sbin/powersched-6.2"
 else
   _powersched_bin="/usr/sbin/powersched"

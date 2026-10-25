@@ -14,18 +14,20 @@ if ! echo "${PLATFORMS}" | grep -wq "${PLATFORM}"; then
 fi
 
 _release="$(/bin/uname -r)"
-_kernel_major="${_release%%[-+]*}"
-_kernel_major="${_kernel_major%%.*}"
-case "${_kernel_major}" in
+# DSM 版本判据：读 /etc/defaults/VERSION 的 majorversion（6.2 → 6，7.x → 7）。
+# 不能用内核主版本 —— DSM 7.0~7.3 的内核同样是 4.4.x（4.4.180 / 4.4.302），与 6.2 的
+# 4.4.59 / 3.10.105 主版本相同，用内核主版本会把整个 7.x 误判成 6.2。
+MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+case "${MajorVersion}" in
   '' | *[!0-9]*)
-    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
     exit 1
     ;;
 esac
 
-# DSM 6.x（内核 4.x/3.x）用 6.2 载荷：kbd 旧版二进制不依赖 libbsd/libmd
+# DSM 6.x 用 6.2 载荷：kbd 旧版二进制不依赖 libbsd/libmd
 #（6.x 的 glibc 2.20 下 7.1 载荷的 loadkeys/setleds/chvt 会因找不到 libbsd.so.0 而无法运行）。
-if [ "${_kernel_major}" -lt 5 ]; then
+if [ "${MajorVersion}" -lt 7 ]; then
   _console_pkg="/addons/console-6.2.tgz"
   _console_ver="6.2"
 else
@@ -82,7 +84,7 @@ elif [ "${1}" = "late" ]; then
   # run when boot installed DSM
   printf "DSM mode\n" >/tmpRoot/etc/issue
 
-  if [ "${_kernel_major}" -lt 5 ]; then
+  if [ "${MajorVersion}" -lt 7 ]; then
     # DSM 6.x 自己就有 tty1 getty（/usr/share/init/tty.conf: exec /sbin/getty 115200 console），
     # 且没有 systemd；这里只补键盘映射（upstart 任务，start on runlevel 1）。
     mkdir -p /tmpRoot/usr/share/init

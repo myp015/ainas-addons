@@ -9,11 +9,13 @@
 # shellcheck disable=SC2010
 
 _release="$(/bin/uname -r)"
-_kernel_major="${_release%%[-+]*}"
-_kernel_major="${_kernel_major%%.*}"
-case "${_kernel_major}" in
+# DSM 版本判据：读 /etc/defaults/VERSION 的 majorversion（6.2 → 6，7.x → 7）。
+# 不能用内核主版本 —— DSM 7.0~7.3 的内核同样是 4.4.x（4.4.180 / 4.4.302），与 6.2 的
+# 4.4.59 / 3.10.105 主版本相同，用内核主版本会把整个 7.x 误判成 6.2。
+MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+case "${MajorVersion}" in
   '' | *[!0-9]*)
-    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
     exit 1
     ;;
 esac
@@ -22,7 +24,7 @@ esac
 # wpa_supplicant 依赖 libcrypto.so.3 / libdbus-1（均需 glibc 2.25+），6.x 的 glibc 是 2.20。
 # 6.2 载荷取自 DSM 6.2 自身（iw / wpa_supplicant / wpa_cli + libnl.so.2 / libssl.so.1.0.0），
 # 其中 libcrypto.so.1.0.0 由 misc addon 的 6.2 覆盖层提供（ramdisk）或 DSM 6.2 自带（root）。
-if [ "${_kernel_major}" -lt 5 ]; then
+if [ "${MajorVersion}" -lt 7 ]; then
   _wireless_pkg="/addons/wireless-6.2.tgz"
 else
   _wireless_pkg="/addons/wireless-7.1.tgz"
@@ -74,7 +76,7 @@ elif [ "${1}" = "late" ]; then
   cp -pf "${0}" "/tmpRoot/usr/rr/addons/"
 
   cp -vpf /usr/bin/wireless_supplicant.sh /tmpRoot/usr/bin/wireless_supplicant.sh
-  if [ "${_kernel_major}" -lt 5 ]; then
+  if [ "${MajorVersion}" -lt 7 ]; then
     # DSM 6.x 自带 /usr/sbin/{iw,wpa_supplicant,wpa_cli}（/sbin -> usr/sbin），运行期直接用系统自带；
     # 载荷只用于安装阶段（rcExit 时还没有 DSM 根文件系统）。
     echo "DSM 6.x uses its built-in iw/wpa_supplicant, skip payload extraction"

@@ -9,11 +9,13 @@
 PLATFORM="$(/bin/get_key_value /etc.defaults/synoinfo.conf unique | cut -d"_" -f2)"
 
 _release="$(/bin/uname -r)"
-_kernel_major="${_release%%[-+]*}"
-_kernel_major="${_kernel_major%%.*}"
-case "${_kernel_major}" in
+# DSM 版本判据：读 /etc/defaults/VERSION 的 majorversion（6.2 → 6，7.x → 7）。
+# 不能用内核主版本 —— DSM 7.0~7.3 的内核同样是 4.4.x（4.4.180 / 4.4.302），与 6.2 的
+# 4.4.59 / 3.10.105 主版本相同，用内核主版本会把整个 7.x 误判成 6.2。
+MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+case "${MajorVersion}" in
   '' | *[!0-9]*)
-    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
     exit 1
     ;;
 esac
@@ -29,7 +31,7 @@ if [ "${1}" = "early" ]; then
   #   sort               → libcrypto.so.1.0.0
   #   blkid              → libblkid.so.1
   # 用 busybox tar 解包，不依赖尚未就位的工具。
-  if [ "${_kernel_major}" -lt 5 ]; then
+  if [ "${MajorVersion}" -lt 7 ]; then
     [ -f /addons/misc-6.2.tgz ] || {
       echo " ERROR: /addons/misc-6.2.tgz not found" >&2
       exit 1
@@ -42,7 +44,7 @@ if [ "${1}" = "early" ]; then
 
   # [CREATE][failed] Raidtool initsys（7.x 的 scemd 二进制补丁：-e 0.9 → -e 1.2）
   # 6.x 不做：该问题只出现在 7.x 的 scemd，且这段流水线一旦缺工具（xxd/sed）会把 scemd 截成空文件。
-  if [ "${_kernel_major}" -ge 5 ]; then
+  if [ "${MajorVersion}" -ge 7 ]; then
     SO_FILE="/usr/syno/bin/scemd"
     [ ! -f "${SO_FILE}.bak" ] && cp -pf "${SO_FILE}" "${SO_FILE}.bak"
     cp -pf "${SO_FILE}" "${SO_FILE}.tmp"
@@ -122,7 +124,7 @@ elif [ "${1}" = "rcExit" ]; then
 
   # error message
   # DSM 6.x 的安装器文案在 /usr/syno/web/installer.js（7.x 才是 main.js），且 6.x 前缀是 _T(...)
-  if [ "${_kernel_major}" -lt 5 ]; then
+  if [ "${MajorVersion}" -lt 7 ]; then
     _webjs="/usr/syno/web/installer.js"
     _webpat='_T("welcome","desc_install")'
   else
@@ -254,7 +256,7 @@ elif [ "${1}" = "late" ]; then
     BAUD="$(echo "${I}" | cut -d',' -f2 | cut -d'n' -f1)"
     echo "ttyS0 ttyS1 ttyS2" | grep -wq "${TTYN}" && continue
 
-    if [ "${_kernel_major}" -lt 5 ]; then
+    if [ "${MajorVersion}" -lt 7 ]; then
       # DSM 6.x 没有 systemd，写 upstart 任务（6.x 的 job 目录是 /usr/share/init）
       if [ -n "${TTYN}" ] && [ -e "/dev/${TTYN}" ]; then
         echo "Make getty for ${TTYN} (upstart)"

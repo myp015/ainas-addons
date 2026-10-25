@@ -7,19 +7,22 @@
 #
 
 _release="$(/bin/uname -r)"
-_kernel_major="${_release%%[-+]*}"
-_kernel_major="${_kernel_major%%.*}"
-case "${_kernel_major}" in
+# DSM 版本判据：读 /etc/defaults/VERSION 的 majorversion（6.2 → 6，7.x → 7）。
+# 不能用内核主版本 —— DSM 7.0~7.3 的内核同样是 4.4.x（4.4.180 / 4.4.302），与 6.2 的
+# 4.4.59 / 3.10.105 主版本相同，用内核主版本会把整个 7.x 误判成 6.2。
+MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+case "${MajorVersion}" in
   '' | *[!0-9]*)
-    echo " ERROR: cannot determine kernel major version from '${_release}'" >&2
+    echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
     exit 1
     ;;
 esac
 
-# DSM 6.x（内核 4.x/3.x）没有 systemd，且二进制布局不同（/usr 前缀、eudev 旧版、无 /usr/lib/modules/update），
-# 因此按内核主版本选包：6.x 用 eudev-6.2.tgz（与 RR 24.4.0 同源），7.x 用 eudev-7.1.tgz。
+# DSM 6.x 没有 systemd，且二进制布局不同（/usr 前缀、eudev 旧版、无 /usr/lib/modules/update），
+# 因此按 DSM 主版本选包：6.x 用 eudev-6.2.tgz（与 RR 24.4.0 同源），7.x 用 eudev-7.1.tgz。
+# 不能用内核主版本判断 —— DSM 7.0~7.3 的内核同样是 4.4.x（4.4.180 / 4.4.302）。
 # 两者解包路径互不重叠（6.x 在 /usr/*，7.x 在 /bin、/lib），不会互相污染。
-if [ "${_kernel_major}" -lt 5 ]; then
+if [ "${MajorVersion}" -lt 7 ]; then
   _eudev_pkg="/addons/eudev-6.2.tgz"
   _eudev_ver="6.2"
 else
@@ -36,7 +39,7 @@ if [ "${1}" = "early" ]; then
   tar -zxf "${_eudev_pkg}" -C /
   # 6.2 上不建 modprobe/modinfo 软链：ramdisk 里 /usr/sbin/modprobe 由 redpill addon 的
   # iosched-trampoline 接管，覆盖它会破坏 rp.ko 的按需加载（RR 24.4.0 同样不建）。
-  if [ "${_kernel_major}" -ge 5 ]; then
+  if [ "${MajorVersion}" -ge 7 ]; then
     [ -L "/usr/sbin/modprobe" ] || ln -sf /usr/bin/kmod /usr/sbin/modprobe
     [ -L "/usr/sbin/modinfo" ] || ln -sf /usr/bin/kmod /usr/sbin/modinfo
     [ -L "/usr/sbin/depmod" ] || ln -sf /usr/bin/kmod /usr/sbin/depmod
@@ -48,7 +51,7 @@ elif [ "${1}" = "modules" ]; then
 
   # 以下整段只对 7.x 有意义：/usr/lib/modules/update 双 DRM 栈是 RR 7.x 的产物，
   # 6.x 的 modules 平铺在 /usr/lib/modules 下、没有 update 目录。加 guard 免得误删。
-  if [ "${_kernel_major}" -ge 5 ]; then
+  if [ "${MajorVersion}" -ge 7 ]; then
     # 双 DRM 栈（i915 + amdgpu/radeon 共用同一套 drm/ttm/gpu-sched）：
     # 原逻辑只认 i915，没有 Intel 核显（AMD 平台）或 base i915 支持当前 GPU 时
     # 会 rm -rf update，把 amdgpu/radeon 一起删掉；且 base 与 update 的 drm 版本
@@ -82,9 +85,9 @@ elif [ "${1}" = "modules" ]; then
   ## mv -f /usr/lib/udev/rules.d/80-net-name-slot.rules /usr/lib/udev/rules.d/80-net-name-slot.rules.bak
   [ -e /proc/sys/kernel/hotplug ] && printf '\000\000\000\000' >/proc/sys/kernel/hotplug
   /usr/sbin/depmod -a
-  # 以下三处预加载是 7.x 内核的依赖补齐：4.4/3.10 内核里 cpufreq_governor_dbs 是内置的，
+  # 以下三处预加载是 7.x 的依赖补齐：6.x（4.4.59 / 3.10.105）里 cpufreq_governor_dbs 是内置的，
   # 且没有 devlink / intel_auxiliary 模块，6.x 上调用只会经 iosched-trampoline 报错噪音。
-  if [ "${_kernel_major}" -ge 5 ]; then
+  if [ "${MajorVersion}" -ge 7 ]; then
     # early 阶段直接 insmod 列表模块、不做 modules.dep 依赖解析（SYNOLoadModules），
     # 且 devlink / intel_auxiliary 无 modalias alias（udev 也不会自动加载）：
     # i40e→intel_auxiliary、ixgbe→devlink 会在早期加载缺符号失败（err -2）。
@@ -98,7 +101,7 @@ elif [ "${1}" = "modules" ]; then
   # dbs_check_cpu（其余平台内核内置），故这两个 .ko 会 unknown symbol 加载失败（DSM rc 在
   # jrExit 之后、rcExit 之前执行）。内核未提供这些符号时预加载提供者，使 DSM rc 的 insmod
   # 得以解析；内核已内置则跳过（否则重复导出符号同样会加载失败）。
-  if [ "${_kernel_major}" -ge 5 ] && [ -r /proc/kallsyms ] && ! grep -qw cpufreq_governor_dbs /proc/kallsyms; then
+  if [ "${MajorVersion}" -ge 7 ] && [ -r /proc/kallsyms ] && ! grep -qw cpufreq_governor_dbs /proc/kallsyms; then
     /usr/sbin/modprobe cpufreq_governor 2>/dev/null || true
   fi
   /usr/sbin/udevd -d || {
@@ -138,7 +141,7 @@ elif [ "${1}" = "modules" ]; then
 
 elif [ "${1}" = "late" ]; then
   echo "Installing addon eudev - ${1} (${_eudev_ver})"
-  if [ "${_kernel_major}" -ge 5 ]; then
+  if [ "${MajorVersion}" -ge 7 ]; then
     # [ ! -L "/tmpRoot/usr/sbin/modprobe" ] && ln -sf /usr/bin/kmod /tmpRoot/usr/sbin/modprobe
     [ ! -L "/tmpRoot/usr/sbin/modinfo" ] && ln -sf /usr/bin/kmod /tmpRoot/usr/sbin/modinfo
     [ ! -L "/tmpRoot/usr/sbin/depmod" ] && ln -sf /usr/bin/kmod /tmpRoot/usr/sbin/depmod
