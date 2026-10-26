@@ -58,8 +58,24 @@ if [ "${1}" = "late" ]; then
   }
 
   # syslog-ng
+  # DSM 6.2 每次启动都会 `rm -rf /etc/syslog-ng/patterndb.d`（/etc/init/root-file-system.conf），
+  # 再由 /etc/init/syslog-ng.conf 从 /etc.defaults 复制回来 ⇒ 写进 /etc 的过滤规则开机即被冲掉。
+  # 6.2 只保留 /usr/local/etc/syslog-ng/patterndb.d 这个本地覆盖目录（syslog-ng.conf 里有
+  # include "/usr/local/etc/syslog-ng/patterndb.d/"，DSM 自己也把 HighAvailability.conf 放这里）。
   ROOT_PATH="/tmpRoot"
-  SYSLOG_NG_PATH="${ROOT_PATH}/etc/syslog-ng/patterndb.d"
+  MajorVersion="$(/bin/get_key_value /etc.defaults/VERSION majorversion 2>/dev/null)"
+  [ -n "${MajorVersion}" ] || MajorVersion="$(/bin/get_key_value /etc/VERSION majorversion 2>/dev/null)"
+  case "${MajorVersion}" in
+    '' | *[!0-9]*)
+      echo " ERROR: cannot determine DSM major version from /etc/defaults/VERSION" >&2
+      exit 1
+      ;;
+  esac
+  if [ "${MajorVersion}" -lt 7 ]; then
+    SYSLOG_NG_PATH="${ROOT_PATH}/usr/local/etc/syslog-ng/patterndb.d"
+  else
+    SYSLOG_NG_PATH="${ROOT_PATH}/etc/syslog-ng/patterndb.d"
+  fi
   delblocklog "*"
   addblocklog "synobios get empty ttyS current"
   addblocklog "telnet/tcp: bind: Address already in use"
@@ -107,11 +123,12 @@ if [ "${1}" = "late" ]; then
 elif [ "${1}" = "uninstall" ]; then
   echo "Installing addon trivial - ${1}"
 
-  # syslog-ng
-  SYSLOG_NG_PATH="/tmpRoot/etc/syslog-ng/patterndb.d"
-  rm -f "${SYSLOG_NG_PATH}/RR.conf"
-  for D in not2kern not2msg; do
-    rm -f "${SYSLOG_NG_PATH}/include/${D}/RR_${D}.conf"
+  # syslog-ng：6.2 在 /usr/local 覆盖目录、7.x 在 /etc，两处都清（兼容旧版本安装的位置）
+  for P in "/tmpRoot/usr/local/etc/syslog-ng/patterndb.d" "/tmpRoot/etc/syslog-ng/patterndb.d"; do
+    rm -f "${P}/RR.conf"
+    for D in not2kern not2msg; do
+      rm -f "${P}/include/${D}/RR_${D}.conf"
+    done
   done
 
   # syno-dump-core
