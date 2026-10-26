@@ -124,19 +124,30 @@ elif [ "${1}" = "patches" ]; then
 elif [ "${1}" = "rcExit" ]; then
   echo "Installing addon misc - ${1}"
 
-  # enable telnet
-  sed -i 's/^root:x:0:0/root::0:0/' /etc/passwd
-  inetd
+  # 下面四项是 RR 26.x 为 DSM 7.x 加的，RR 24.4.0（最后一个支持 6.2 的版本）里没有，
+  # 也从未在 6.2 上验证过 —— 6.2 按 RR 24.4.0 的语义保持原样，只有 7.x 执行：
+  #   - telnet（root 空密码 + inetd）：安装流程不需要
+  #   - installable_check_pass 轮询：6.2 全树没有任何使用者（grep 0 处）
+  #   - DisabledPortDisks=""：6.2 选盘走 installable_disk_list，不看该字段
+  #   - reboot.cgi 的 `reboot -f`：跳过关机流程，改变了系统行为
+  # 实证对照：RR 24.4.0 的 misc 装 6.2 正常，我们的 26.10.11 网页停在 98%，但后端其实
+  # 已成功（install.progress=stage Success、ErrFHOSTDoUpgrade retv=[0]、synoupdate.log
+  # Congratulations），差异只可能出自这几项脚本副作用。
+  if [ "${MajorVersion}" -ge 7 ]; then
+    # enable telnet
+    sed -i 's/^root:x:0:0/root::0:0/' /etc/passwd
+    inetd
 
-  # invalid_disks
-  # method 1 # (block dsm system migrate)
-  # SH_FILE="/usr/syno/share/get_hcl_invalid_disks.sh"
-  # [ -f "${SH_FILE}" ] && cp -pf "${SH_FILE}" "${SH_FILE}.bak" && printf '#!/bin/sh\nexit 0\n' >"${SH_FILE}"
-  # method 2
-  while true; do
-    [ ! -f "/tmp/installable_check_pass" ] && touch "/tmp/installable_check_pass"
-    sleep 1
-  done & # using a while loop in case DSM is running in a VM
+    # invalid_disks
+    # method 1 # (block dsm system migrate)
+    # SH_FILE="/usr/syno/share/get_hcl_invalid_disks.sh"
+    # [ -f "${SH_FILE}" ] && cp -pf "${SH_FILE}" "${SH_FILE}.bak" && printf '#!/bin/sh\nexit 0\n' >"${SH_FILE}"
+    # method 2
+    while true; do
+      [ ! -f "/tmp/installable_check_pass" ] && touch "/tmp/installable_check_pass"
+      sleep 1
+    done & # using a while loop in case DSM is running in a VM
+  fi
 
   # for epyc7003ntb web error "无法连接到另一台控制器"
   sed -i 's/check_ntb_connection$/exit 0 # check_ntb_connection/' "/usr/syno/share/clusterInstall.sh" 2>/dev/null || true
@@ -176,11 +187,14 @@ elif [ "${1}" = "rcExit" ]; then
 
     sleep 1
   done &
-  # disable DisabledPortDisks
-  sed -i 's/^DisabledPortDisks=.*$/DisabledPortDisks=""/' /usr/syno/web/webman/get_state.cgi 2>/dev/null || true
+  # 同上面的理由：这两项只有 7.x 执行，6.2 保持 RR 24.4.0 的原样。
+  if [ "${MajorVersion}" -ge 7 ]; then
+    # disable DisabledPortDisks
+    sed -i 's/^DisabledPortDisks=.*$/DisabledPortDisks=""/' /usr/syno/web/webman/get_state.cgi 2>/dev/null || true
 
-  # reboot
-  sed -i 's/reboot$/reboot -f/' /usr/syno/web/webman/reboot.cgi 2>/dev/null || true
+    # reboot
+    sed -i 's/reboot$/reboot -f/' /usr/syno/web/webman/reboot.cgi 2>/dev/null || true
+  fi
 
   # recovery（6.x 的脚本名是 recover.cgi，7.x 是 recovery.cgi）
   if grep -qE "(^|[[:space:]])recovery([[:space:]]|$)" /proc/cmdline 2>/dev/null; then

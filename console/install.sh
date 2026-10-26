@@ -94,9 +94,26 @@ elif [ "${1}" = "late" ]; then
   printf "DSM mode\n" >/tmpRoot/etc/issue
 
   if [ "${MajorVersion}" -lt 7 ]; then
-    # DSM 6.x 自己就有 tty1 getty（/usr/share/init/tty.conf: exec /sbin/getty 115200 console），
-    # 且没有 systemd；这里只补键盘映射（upstart 任务，start on runlevel 1）。
+    # DSM 6.x 没有 systemd，服务一律写成 upstart 任务（目录 /usr/share/init）。
+    #
+    # getty：6.2 自带的 tty.conf 只有 `exec /sbin/getty 115200 console`，而 cmdline 带
+    # `console=ttyS0,115200n8` 时 console 解析成串口 ttyS0（实测 bj3_dsm 的 getty 进程
+    # TTY=ttyS0）—— 显示器所在的 tty1 上没有任何 getty，于是 loader 在 modules 阶段写的
+    # "RR console - wait..." 会一直留在屏幕上（/dev/vcs1 实测），/etc/issue 也无人打印。
+    # 这里照抄 tty.conf 的写法补一个 tty1 getty，与 7.x 分支的 getty@tty1 对等。
+    # 实测（DSM 6.2.4 / bj3_dsm）：`/sbin/getty 115200 tty1` 会清屏并打印 "DSM mode"
+    # （/etc/issue）+ "login:"；注意 `-L 0 tty1` 这种写法在 DSM 的 getty 上不打印，不要用。
     mkdir -p /tmpRoot/usr/share/init
+    {
+      echo 'description "RR console getty on tty1"'
+      echo 'start on stopped rc'
+      echo 'respawn'
+      echo 'respawn limit 5 10'
+      echo 'console none'
+      echo 'exec /sbin/getty 115200 tty1'
+    } >/tmpRoot/usr/share/init/rr-getty-tty1.conf
+
+    # 键盘映射（upstart 任务，start on runlevel 1）
     {
       echo 'description "RR console keymap"'
       echo 'start on runlevel 1'
@@ -145,6 +162,7 @@ elif [ "${1}" = "uninstall" ]; then
   rm -f "/tmpRoot/usr/lib/systemd/system/multi-user.target.wants/keymap.service"
   rm -f "/tmpRoot/usr/lib/systemd/system/keymap.service"
   rm -f "/tmpRoot/usr/share/init/rr-keymap.conf"
+  rm -f "/tmpRoot/usr/share/init/rr-getty-tty1.conf"
 
   rm -rf /tmpRoot/usr/share/consolefonts
   rm -rf /tmpRoot/usr/share/keymaps
