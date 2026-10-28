@@ -187,7 +187,9 @@ dtModel() {
       # model.dtb 里 ahci 子节点也只有 pcie_root + ata_port。故 driver 为空时用同一来源兜底，
       # 否则 6.2 上所有 sata* 都会被判 unknown ⇒ model.dtb 零槽位 ⇒ 安装流程认不到盘。
       if [ -z "${DRIVER}" ]; then
-        DRIVER="$(cat "/sys/block/${F##*/}/device/../../scsi_host/host*/proc_name" 2>/dev/null | head -1)"
+        # 注意：路径尾段的 host* 必须留在引号外。POSIX shell 双引号内的 * 是字面量、不做路径名扩展，
+        # 一旦整段加引号，cat 会去开名为 "host*/proc_name" 的文件，失败又被 2>/dev/null 吞掉 ⇒ 恒为空。
+        DRIVER="$(cat "${F}"/device/../../scsi_host/host*/proc_name 2>/dev/null | head -1)"
       fi
       if [ -z "${PCIEPATH}" ] || [ -z "${DRIVER}" ]; then
         _log "unknown: ${F}"
