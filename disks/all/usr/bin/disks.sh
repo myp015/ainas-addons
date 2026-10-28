@@ -182,6 +182,13 @@ dtModel() {
       PCIEPATH="$(grep 'pciepath' "${F}/device/syno_block_info" 2>/dev/null | cut -d'=' -f2)"
       ATAPORT="$(grep 'ata_port_no' "${F}/device/syno_block_info" 2>/dev/null | cut -d'=' -f2)"
       DRIVER="$(cat "${F}/device/syno_block_info" 2>/dev/null | grep 'driver' | cut -d'=' -f2)"
+      # DSM 6.2（内核 4.4.x / 3.10.x）的 syno_block_info 只有 pciepath / ata_port_no，没有 driver；
+      # 6.2 的 scemd / findhostd 判断 internal_slot 时节点名取自 host* 的 proc_name，官方 DS920+ 的
+      # model.dtb 里 ahci 子节点也只有 pcie_root + ata_port。故 driver 为空时用同一来源兜底，
+      # 否则 6.2 上所有 sata* 都会被判 unknown ⇒ model.dtb 零槽位 ⇒ 安装流程认不到盘。
+      if [ -z "${DRIVER}" ]; then
+        DRIVER="$(cat "/sys/block/${F##*/}/device/../../scsi_host/host*/proc_name" 2>/dev/null | head -1)"
+      fi
       if [ -z "${PCIEPATH}" ] || [ -z "${DRIVER}" ]; then
         _log "unknown: ${F}"
         continue
